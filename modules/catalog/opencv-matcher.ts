@@ -17,13 +17,7 @@ export interface MatchResult {
 
 async function getOpenCv(): Promise<Cv> {
   if (!runtime) {
-    runtime = import("@techstark/opencv-js").then(async (module) => {
-      const candidate: any = module.default;
-      if (candidate instanceof Promise) return candidate;
-      if (candidate.Mat) return candidate;
-      await new Promise<void>((resolve) => { candidate.onRuntimeInitialized = () => resolve(); });
-      return candidate;
-    });
+    runtime = import("./opencv-runtime").then((module) => module.getOpenCvRuntime());
   }
   return runtime;
 }
@@ -49,6 +43,10 @@ function orderCorners(points: { x: number; y: number }[]) {
   ];
 }
 
+function distance(a: { x: number; y: number }, b: { x: number; y: number }) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
 /** Detects the largest card-like quadrilateral and warps it to a canonical 2:3 frame. */
 function normalizeCard(cv: Cv, source: any) {
   const maxSide = 900;
@@ -59,41 +57,51 @@ function normalizeCard(cv: Cv, source: any) {
   cv.cvtColor(resized, gray, cv.COLOR_RGBA2GRAY);
   cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
   cv.Canny(blurred, edges, 45, 135);
+  const closeKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(9, 9));
+  cv.morphologyEx(edges, edges, cv.MORPH_CLOSE, closeKernel);
   const contours = new cv.MatVector(); const hierarchy = new cv.Mat();
-  cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+  cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-  let best: any = null; let bestArea = 0;
+  let bestPoints: { x: number; y: number }[] | null = null; let bestArea = 0;
   for (let index = 0; index < contours.size(); index += 1) {
     const contour = contours.get(index); const perimeter = cv.arcLength(contour, true); const approx = new cv.Mat();
     cv.approxPolyDP(contour, approx, perimeter * 0.025, true);
     const area = Math.abs(cv.contourArea(approx));
     if (approx.rows === 4 && cv.isContourConvex(approx) && area > bestArea && area > resized.rows * resized.cols * 0.12) {
-      best?.delete(); best = approx.clone(); bestArea = area;
+      const raw = Array.from(approx.data32S as Int32Array);
+      const corners = orderCorners([{ x: raw[0], y: raw[1] }, { x: raw[2], y: raw[3] }, { x: raw[4], y: raw[5] }, { x: raw[6], y: raw[7] }]);
+      const width = (distance(corners[0], corners[1]) + distance(corners[3], corners[2])) / 2;
+      const height = (distance(corners[0], corners[3]) + distance(corners[1], corners[2])) / 2;
+      const aspect = Math.min(width, height) / Math.max(width, height);
+      if (aspect >= 0.56 && aspect <= 0.76) { bestPoints = corners; bestArea = area; }
+    }
+    if (area > resized.rows * resized.cols * 0.1) {
+      const rotated = cv.minAreaRect(contour); const box = cv.boxPoints(rotated) as { x: number; y: number }[];
+      const corners = orderCorners(box); const width = (distance(corners[0], corners[1]) + distance(corners[3], corners[2])) / 2; const height = (distance(corners[0], corners[3]) + distance(corners[1], corners[2])) / 2; const boxArea = width * height; const aspect = Math.min(width, height) / Math.max(width, height);
+      if (aspect >= 0.56 && aspect <= 0.76 && boxArea > bestArea) { bestPoints = corners; bestArea = boxArea; }
     }
     approx.delete(); contour.delete();
   }
 
   const output = new cv.Mat();
-  if (best) {
-    const raw = Array.from(best.data32S as Int32Array);
-    const points = orderCorners([
-      { x: raw[0], y: raw[1] }, { x: raw[2], y: raw[3] },
-      { x: raw[4], y: raw[5] }, { x: raw[6], y: raw[7] },
-    ]);
-    const src = cv.matFromArray(4, 1, cv.CV_32FC2, points.flatMap((point) => [point.x, point.y]));
+  if (bestPoints) {
+    const src = cv.matFromArray(4, 1, cv.CV_32FC2, bestPoints.flatMap((point) => [point.x, point.y]));
     const dst = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, 399, 0, 399, 599, 0, 599]);
     const transform = cv.getPerspectiveTransform(src, dst);
     cv.warpPerspective(resized, output, transform, new cv.Size(400, 600), cv.INTER_LINEAR, cv.BORDER_REPLICATE);
-    src.delete(); dst.delete(); transform.delete(); best.delete();
+    src.delete(); dst.delete(); transform.delete();
   } else {
     cv.resize(resized, output, new cv.Size(400, 600), 0, 0, cv.INTER_AREA);
   }
-  gray.delete(); blurred.delete(); edges.delete(); contours.delete(); hierarchy.delete(); resized.delete();
+  gray.delete(); blurred.delete(); edges.delete(); closeKernel.delete(); contours.delete(); hierarchy.delete(); resized.delete();
   return output;
 }
 
-function extractFeatures(cv: Cv, image: HTMLImageElement): FeatureSet {
-  const source = cv.imread(image); const normalized = normalizeCard(cv, source); const gray = new cv.Mat();
+function extractFeatures(cv: Cv, image: HTMLImageElement, normalizePerspective = true): FeatureSet {
+  const source = cv.imread(image); const normalized = new cv.Mat(); const gray = new cv.Mat();
+  if (normalizePerspective) {
+    const corrected = normalizeCard(cv, source); corrected.copyTo(normalized); corrected.delete();
+  } else cv.resize(source, normalized, new cv.Size(400, 600), 0, 0, cv.INTER_AREA);
   cv.cvtColor(normalized, gray, cv.COLOR_RGBA2GRAY); cv.equalizeHist(gray, gray);
   const keypoints = new cv.KeyPointVector(); const descriptors = new cv.Mat(); const mask = new cv.Mat();
   const orb = new cv.ORB(800, 1.2, 8, 24, 0, 2, cv.ORB_HARRIS_SCORE, 31, 12);
@@ -158,7 +166,7 @@ export async function matchPhotoCard(file: File, cards: CatalogCard[], index: Re
     const shortlist = cards.map((card) => ({ card, score: index[card.id] ? coarseSimilarity(query.coarse, index[card.id]) : 0 })).sort((a, b) => b.score - a.score).slice(0, 20).map((item) => item.card);
     try {
       for (let candidateIndex = 0; candidateIndex < shortlist.length; candidateIndex += 1) {
-        const image = await loadImage(shortlist[candidateIndex].image); const reference = extractFeatures(cv, image);
+        const image = await loadImage(shortlist[candidateIndex].image); const reference = extractFeatures(cv, image, false);
         try {
           const result = compareFeatures(cv, query, reference);
           if (!best || result.score > best.confidence) best = { card: shortlist[candidateIndex], confidence: result.score, goodMatches: result.good, inlierRatio: result.inlierRatio };
