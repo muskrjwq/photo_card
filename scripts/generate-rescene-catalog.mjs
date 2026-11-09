@@ -62,7 +62,8 @@ function makeDescriptorRecord(cv, id, pixels) {
   cv.equalizeHist(gray, gray);
   const keypoints = new cv.KeyPointVector();
   const descriptors = new cv.Mat();
-  const mask = new cv.Mat();
+  const mask = new cv.Mat(600, 400, cv.CV_8UC1, new cv.Scalar(0));
+  cv.rectangle(mask, new cv.Point(24, 36), new cv.Point(375, 563), new cv.Scalar(255), -1);
   const orb = new cv.ORB(800, 1.2, 8, 24, 0, 2, cv.ORB_HARRIS_SCORE, 31, 12);
   orb.detectAndCompute(gray, mask, keypoints, descriptors);
 

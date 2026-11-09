@@ -78,25 +78,27 @@ function distance(a: { x: number; y: number }, b: { x: number; y: number }) {
 
 /** Detects the largest card-like quadrilateral and warps it to a canonical 2:3 frame. */
 function normalizeCard(cv: Cv, source: any) {
-  const maxSide = 900;
+  const maxSide = 1200;
   const scale = Math.min(1, maxSide / Math.max(source.cols, source.rows));
   const resized = new cv.Mat();
   cv.resize(source, resized, new cv.Size(Math.round(source.cols * scale), Math.round(source.rows * scale)), 0, 0, cv.INTER_AREA);
   const gray = new cv.Mat(); const blurred = new cv.Mat(); const edges = new cv.Mat();
   cv.cvtColor(resized, gray, cv.COLOR_RGBA2GRAY);
   cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
-  cv.Canny(blurred, edges, 45, 135);
-  const closeKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(9, 9));
+  cv.Canny(blurred, edges, 30, 105);
+  const closeKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(17, 17));
+  const dilateKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
   cv.morphologyEx(edges, edges, cv.MORPH_CLOSE, closeKernel);
+  cv.dilate(edges, edges, dilateKernel);
   const contours = new cv.MatVector(); const hierarchy = new cv.Mat();
-  cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+  cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
 
-  let bestPoints: { x: number; y: number }[] | null = null; let bestArea = 0;
+  const frameArea = resized.rows * resized.cols; let bestPoints: { x: number; y: number }[] | null = null; let bestArea = 0;
   for (let index = 0; index < contours.size(); index += 1) {
-    const contour = contours.get(index); const perimeter = cv.arcLength(contour, true); const approx = new cv.Mat();
+    const contour = contours.get(index); const contourArea = Math.abs(cv.contourArea(contour)); const perimeter = cv.arcLength(contour, true); const approx = new cv.Mat();
     cv.approxPolyDP(contour, approx, perimeter * 0.025, true);
     const area = Math.abs(cv.contourArea(approx));
-    if (approx.rows === 4 && cv.isContourConvex(approx) && area > bestArea && area > resized.rows * resized.cols * 0.12) {
+    if (approx.rows === 4 && cv.isContourConvex(approx) && area > bestArea && area > frameArea * 0.035 && area < frameArea * 0.94) {
       const raw = Array.from(approx.data32S as Int32Array);
       const corners = orderCorners([{ x: raw[0], y: raw[1] }, { x: raw[2], y: raw[3] }, { x: raw[4], y: raw[5] }, { x: raw[6], y: raw[7] }]);
       const width = (distance(corners[0], corners[1]) + distance(corners[3], corners[2])) / 2;
@@ -104,15 +106,47 @@ function normalizeCard(cv: Cv, source: any) {
       const aspect = Math.min(width, height) / Math.max(width, height);
       if (aspect >= 0.56 && aspect <= 0.76) { bestPoints = corners; bestArea = area; }
     }
-    if (area > resized.rows * resized.cols * 0.1) {
+    if (contourArea > frameArea * 0.035 && contourArea < frameArea * 0.94) {
       const rotated = cv.minAreaRect(contour); const box = cv.boxPoints(rotated) as { x: number; y: number }[];
-      const corners = orderCorners(box); const width = (distance(corners[0], corners[1]) + distance(corners[3], corners[2])) / 2; const height = (distance(corners[0], corners[3]) + distance(corners[1], corners[2])) / 2; const boxArea = width * height; const aspect = Math.min(width, height) / Math.max(width, height);
-      if (aspect >= 0.56 && aspect <= 0.76 && boxArea > bestArea) { bestPoints = corners; bestArea = boxArea; }
+      const corners = orderCorners(box); const width = (distance(corners[0], corners[1]) + distance(corners[3], corners[2])) / 2; const height = (distance(corners[0], corners[3]) + distance(corners[1], corners[2])) / 2; const boxArea = width * height; const aspect = Math.min(width, height) / Math.max(width, height); const rectangularity = contourArea / Math.max(1, boxArea);
+      if (aspect >= 0.54 && aspect <= 0.78 && rectangularity >= 0.58 && boxArea > bestArea) { bestPoints = corners; bestArea = boxArea; }
     }
     approx.delete(); contour.delete();
   }
 
+  // Low-quality photos can lose a continuous outer edge. In that case, isolate a
+  // card-shaped foreground region whose colour differs from the four corners.
+  if (!bestPoints) {
+    const foreground = new cv.Mat(resized.rows, resized.cols, cv.CV_8UC1);
+    const rgba = resized.data as Uint8Array; const maskData = foreground.data as Uint8Array;
+    const sampleAt = (x: number, y: number) => { const offset = (y * resized.cols + x) * 4; return [rgba[offset], rgba[offset + 1], rgba[offset + 2]]; };
+    const insetX = Math.max(2, Math.round(resized.cols * 0.025)); const insetY = Math.max(2, Math.round(resized.rows * 0.025));
+    const backgrounds = [sampleAt(insetX, insetY), sampleAt(resized.cols - insetX - 1, insetY), sampleAt(insetX, resized.rows - insetY - 1), sampleAt(resized.cols - insetX - 1, resized.rows - insetY - 1)];
+    let cornerSpread = 0;
+    for (const first of backgrounds) for (const second of backgrounds) cornerSpread = Math.max(cornerSpread, Math.hypot(first[0] - second[0], first[1] - second[1], first[2] - second[2]));
+    for (let pixel = 0; pixel < resized.rows * resized.cols; pixel += 1) {
+      const offset = pixel * 4; let nearest = Number.POSITIVE_INFINITY;
+      for (const color of backgrounds) { const red = rgba[offset] - color[0]; const green = rgba[offset + 1] - color[1]; const blue = rgba[offset + 2] - color[2]; nearest = Math.min(nearest, red * red + green * green + blue * blue); }
+      maskData[pixel] = nearest > 42 * 42 ? 255 : 0;
+    }
+    const foregroundClose = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(21, 21)); const foregroundOpen = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(7, 7));
+    if (cornerSpread <= 72) { cv.morphologyEx(foreground, foreground, cv.MORPH_CLOSE, foregroundClose); cv.morphologyEx(foreground, foreground, cv.MORPH_OPEN, foregroundOpen); }
+    const foregroundContours = new cv.MatVector(); const foregroundHierarchy = new cv.Mat();
+    if (cornerSpread <= 72) cv.findContours(foreground, foregroundContours, foregroundHierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    for (let index = 0; cornerSpread <= 72 && index < foregroundContours.size(); index += 1) {
+      const contour = foregroundContours.get(index); const area = Math.abs(cv.contourArea(contour));
+      if (area > frameArea * 0.025 && area < frameArea * 0.9) {
+        const rotated = cv.minAreaRect(contour); const box = cv.boxPoints(rotated) as { x: number; y: number }[]; const corners = orderCorners(box);
+        const width = (distance(corners[0], corners[1]) + distance(corners[3], corners[2])) / 2; const height = (distance(corners[0], corners[3]) + distance(corners[1], corners[2])) / 2; const boxArea = width * height; const aspect = Math.min(width, height) / Math.max(width, height); const rectangularity = area / Math.max(1, boxArea);
+        if (aspect >= 0.52 && aspect <= 0.8 && rectangularity >= 0.48 && boxArea > bestArea) { bestPoints = corners; bestArea = boxArea; }
+      }
+      contour.delete();
+    }
+    foreground.delete(); foregroundClose.delete(); foregroundOpen.delete(); foregroundContours.delete(); foregroundHierarchy.delete();
+  }
+
   const output = new cv.Mat();
+  if (new URLSearchParams(window.location.search).has("recognitionDebug")) console.info("NORMALIZE_DEBUG", JSON.stringify({ source: { width: source.cols, height: source.rows }, resized: { width: resized.cols, height: resized.rows }, corners: bestPoints, areaRatio: bestArea / frameArea }));
   if (bestPoints) {
     const src = cv.matFromArray(4, 1, cv.CV_32FC2, bestPoints.flatMap((point) => [point.x, point.y]));
     const dst = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, 399, 0, 399, 599, 0, 599]);
@@ -122,7 +156,7 @@ function normalizeCard(cv: Cv, source: any) {
   } else {
     cv.resize(resized, output, new cv.Size(400, 600), 0, 0, cv.INTER_AREA);
   }
-  gray.delete(); blurred.delete(); edges.delete(); closeKernel.delete(); contours.delete(); hierarchy.delete(); resized.delete();
+  gray.delete(); blurred.delete(); edges.delete(); closeKernel.delete(); dilateKernel.delete(); contours.delete(); hierarchy.delete(); resized.delete();
   return output;
 }
 
@@ -132,7 +166,8 @@ function extractFeatures(cv: Cv, image: HTMLImageElement, normalizePerspective =
     const corrected = normalizeCard(cv, source); corrected.copyTo(normalized); corrected.delete();
   } else cv.resize(source, normalized, new cv.Size(400, 600), 0, 0, cv.INTER_AREA);
   cv.cvtColor(normalized, gray, cv.COLOR_RGBA2GRAY); cv.equalizeHist(gray, gray);
-  const keypoints = new cv.KeyPointVector(); const descriptors = new cv.Mat(); const mask = new cv.Mat();
+  const keypoints = new cv.KeyPointVector(); const descriptors = new cv.Mat(); const mask = new cv.Mat(600, 400, cv.CV_8UC1, new cv.Scalar(0));
+  cv.rectangle(mask, new cv.Point(24, 36), new cv.Point(375, 563), new cv.Scalar(255), -1);
   const orb = new cv.ORB(800, 1.2, 8, 24, 0, 2, cv.ORB_HARRIS_SCORE, 31, 12);
   orb.detectAndCompute(gray, mask, keypoints, descriptors);
   const hashMat = new cv.Mat(); const histogramMat = new cv.Mat();
@@ -191,7 +226,7 @@ function compareFeatures(cv: Cv, query: FeatureSet, stored: StoredFeatures) {
     }
   }
   matches.delete(); matcher.delete(); referenceDescriptors.delete();
-  const score = Math.min(1, good / 28) * 0.25 + inlierRatio * 0.55 + Math.min(1, spatialCoverage / 0.18) * 0.2;
+  const score = Math.min(1, good / 40) * 0.45 + inlierRatio * 0.4 + Math.min(1, spatialCoverage / 0.18) * 0.15;
   return { score, good, inlierRatio, spatialCoverage };
 }
 
@@ -199,16 +234,20 @@ export async function matchPhotoCard(file: File, cards: CatalogCard[], index: Re
   const [cv, storedIndex] = await Promise.all([getOpenCv(), loadDescriptorIndex(descriptorMeta)]); const objectUrl = URL.createObjectURL(file);
   try {
     const queryImage = await loadImage(objectUrl); const query = extractFeatures(cv, queryImage); let best: MatchResult | null = null;
-    const shortlist = cards.map((card) => ({ card, score: index[card.id] ? coarseSimilarity(query.coarse, index[card.id]) : 0 })).sort((a, b) => b.score - a.score).slice(0, 100).map((item) => item.card);
+    const rankedCandidates = cards.map((card) => ({ card, score: index[card.id] ? coarseSimilarity(query.coarse, index[card.id]) : 0 })).sort((a, b) => b.score - a.score);
+    const shortlist = rankedCandidates.slice(0, 100).map((item) => item.card); const diagnosticResults: Array<{ id: string; score: number; good: number; inlierRatio: number; spatialCoverage: number }> = [];
     try {
       for (let candidateIndex = 0; candidateIndex < shortlist.length; candidateIndex += 1) {
         const reference = storedIndex.get(shortlist[candidateIndex].id); if (!reference) continue;
         const result = compareFeatures(cv, query, reference);
-        if (!best || result.score > best.confidence) best = { card: shortlist[candidateIndex], confidence: result.score, goodMatches: result.good, inlierRatio: result.inlierRatio, spatialCoverage: result.spatialCoverage };
+        diagnosticResults.push({ id: shortlist[candidateIndex].id, score: result.score, good: result.good, inlierRatio: result.inlierRatio, spatialCoverage: result.spatialCoverage });
+        const eligible = result.good >= 12 && result.inlierRatio >= 0.35 && result.spatialCoverage >= 0.035;
+        if (eligible && (!best || result.score > best.confidence)) best = { card: shortlist[candidateIndex], confidence: result.score, goodMatches: result.good, inlierRatio: result.inlierRatio, spatialCoverage: result.spatialCoverage };
         onProgress?.(candidateIndex + 1, shortlist.length);
         if (candidateIndex % 5 === 4) await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
       }
     } finally { query.cleanup(); }
-    return best && best.goodMatches >= 12 && best.inlierRatio >= 0.32 && best.spatialCoverage >= 0.04 && best.confidence >= 0.35 ? best : null;
+    if (new URLSearchParams(window.location.search).has("recognitionDebug")) console.info("RECOGNITION_DEBUG", JSON.stringify({ coarse: rankedCandidates.slice(0, 100).map((item, rank) => ({ id: item.card.id, rank: rank + 1, score: item.score })), verified: diagnosticResults.sort((a, b) => b.score - a.score) }));
+    return best && best.confidence >= 0.45 ? best : null;
   } finally { URL.revokeObjectURL(objectUrl); }
 }
