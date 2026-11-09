@@ -5,14 +5,18 @@ import type { RecognitionIndexEntry } from "./generated-data";
 
 type Cv = any;
 type FeatureSet = { keypoints: any; descriptors: any; coarse: RecognitionIndexEntry; cleanup: () => void };
+type StoredFeatures = { points: Uint16Array; descriptors: Uint8Array; count: number; descriptorSize: number };
+type DescriptorIndexMeta = { url: string; version: number; descriptorSize: number };
 
 let runtime: Promise<Cv> | null = null;
+const descriptorIndexCache = new Map<string, Promise<Map<string, StoredFeatures>>>();
 
 export interface MatchResult {
   card: CatalogCard;
   confidence: number;
   goodMatches: number;
   inlierRatio: number;
+  spatialCoverage: number;
 }
 
 async function getOpenCv(): Promise<Cv> {
@@ -20,6 +24,31 @@ async function getOpenCv(): Promise<Cv> {
     runtime = import("./opencv-runtime").then((module) => module.getOpenCvRuntime());
   }
   return runtime;
+}
+
+function loadDescriptorIndex(meta: DescriptorIndexMeta) {
+  let pending = descriptorIndexCache.get(meta.url);
+  if (pending) return pending;
+  pending = fetch(meta.url, { cache: "force-cache" }).then(async (response) => {
+    if (!response.ok) throw new Error(`Recognition index download failed: ${response.status}`);
+    const buffer = await response.arrayBuffer(); const view = new DataView(buffer); const bytes = new Uint8Array(buffer);
+    const magic = String.fromCharCode(...bytes.slice(0, 4)); const version = view.getUint32(4, true); const total = view.getUint32(8, true);
+    if (magic !== "PCIX" || version !== meta.version) throw new Error("Recognition index version mismatch");
+    const decoder = new TextDecoder("ascii"); const records = new Map<string, StoredFeatures>(); let offset = 12;
+    for (let recordIndex = 0; recordIndex < total; recordIndex += 1) {
+      const id = decoder.decode(bytes.slice(offset, offset + 8)); const count = view.getUint16(offset + 8, true); const descriptorSize = view.getUint16(offset + 10, true); offset += 12;
+      if (descriptorSize !== meta.descriptorSize) throw new Error("Recognition descriptor size mismatch");
+      const points = new Uint16Array(count * 2); const descriptors = new Uint8Array(count * descriptorSize);
+      for (let pointIndex = 0; pointIndex < count; pointIndex += 1) {
+        points[pointIndex * 2] = view.getUint16(offset, true); points[pointIndex * 2 + 1] = view.getUint16(offset + 2, true); offset += 4;
+        descriptors.set(bytes.slice(offset, offset + descriptorSize), pointIndex * descriptorSize); offset += descriptorSize;
+      }
+      records.set(id, { points, descriptors, count, descriptorSize });
+    }
+    if (offset !== buffer.byteLength) throw new Error("Recognition index is corrupt");
+    return records;
+  });
+  descriptorIndexCache.set(meta.url, pending); return pending;
 }
 
 function loadImage(source: string): Promise<HTMLImageElement> {
@@ -131,50 +160,55 @@ function coarseSimilarity(query: RecognitionIndexEntry, reference: RecognitionIn
   return hashScore * 0.72 + histogramScore * 0.28;
 }
 
-function compareFeatures(cv: Cv, query: FeatureSet, reference: FeatureSet) {
-  if (!query.descriptors.rows || !reference.descriptors.rows) return { score: 0, good: 0, inlierRatio: 0 };
+function compareFeatures(cv: Cv, query: FeatureSet, stored: StoredFeatures) {
+  if (!query.descriptors.rows || !stored.count) return { score: 0, good: 0, inlierRatio: 0, spatialCoverage: 0 };
+  const referenceDescriptors = cv.matFromArray(stored.count, stored.descriptorSize, cv.CV_8U, stored.descriptors);
   const matcher = new cv.BFMatcher(cv.NORM_HAMMING, false); const matches = new cv.DMatchVectorVector();
-  matcher.knnMatch(query.descriptors, reference.descriptors, matches, 2);
+  matcher.knnMatch(query.descriptors, referenceDescriptors, matches, 2);
   const queryPoints: number[] = []; const referencePoints: number[] = []; let good = 0;
   for (let index = 0; index < matches.size(); index += 1) {
     const pair = matches.get(index);
     if (pair.size() >= 2) {
       const first = pair.get(0); const second = pair.get(1);
       if (first.distance < second.distance * 0.75) {
-        const queryPoint = query.keypoints.get(first.queryIdx).pt; const referencePoint = reference.keypoints.get(first.trainIdx).pt;
-        queryPoints.push(queryPoint.x, queryPoint.y); referencePoints.push(referencePoint.x, referencePoint.y); good += 1;
+        const queryPoint = query.keypoints.get(first.queryIdx).pt;
+        queryPoints.push(queryPoint.x, queryPoint.y); referencePoints.push(stored.points[first.trainIdx * 2], stored.points[first.trainIdx * 2 + 1]); good += 1;
       }
     }
     pair.delete();
   }
-  let inlierRatio = 0;
+  let inlierRatio = 0; let spatialCoverage = 0;
   if (good >= 8) {
     const src = cv.matFromArray(good, 1, cv.CV_32FC2, queryPoints); const dst = cv.matFromArray(good, 1, cv.CV_32FC2, referencePoints); const inlierMask = new cv.Mat();
     const homography = cv.findHomography(src, dst, cv.RANSAC, 4, inlierMask);
-    const inliers = Array.from(inlierMask.data as Uint8Array).reduce((sum: number, value: number) => sum + (value ? 1 : 0), 0);
+    const maskValues = Array.from(inlierMask.data as Uint8Array); const inliers = maskValues.reduce((sum: number, value: number) => sum + (value ? 1 : 0), 0);
     inlierRatio = inliers / good; src.delete(); dst.delete(); inlierMask.delete(); homography.delete();
+    if (inliers >= 4) {
+      const queryInliers: number[] = []; const referenceInliers: number[] = [];
+      for (let index = 0; index < maskValues.length; index += 1) if (maskValues[index]) { queryInliers.push(queryPoints[index * 2], queryPoints[index * 2 + 1]); referenceInliers.push(referencePoints[index * 2], referencePoints[index * 2 + 1]); }
+      const coverage = (points: number[]) => { const xs = points.filter((_, index) => index % 2 === 0); const ys = points.filter((_, index) => index % 2 === 1); return ((Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys))) / (400 * 600); };
+      spatialCoverage = Math.min(coverage(queryInliers), coverage(referenceInliers));
+    }
   }
-  matches.delete(); matcher.delete();
-  const score = Math.min(1, good / 42) * 0.35 + inlierRatio * 0.65;
-  return { score, good, inlierRatio };
+  matches.delete(); matcher.delete(); referenceDescriptors.delete();
+  const score = Math.min(1, good / 28) * 0.25 + inlierRatio * 0.55 + Math.min(1, spatialCoverage / 0.18) * 0.2;
+  return { score, good, inlierRatio, spatialCoverage };
 }
 
-export async function matchPhotoCard(file: File, cards: CatalogCard[], index: Record<string, RecognitionIndexEntry>, onProgress?: (done: number, total: number) => void): Promise<MatchResult | null> {
-  const cv = await getOpenCv(); const objectUrl = URL.createObjectURL(file);
+export async function matchPhotoCard(file: File, cards: CatalogCard[], index: Record<string, RecognitionIndexEntry>, descriptorMeta: DescriptorIndexMeta, onProgress?: (done: number, total: number) => void): Promise<MatchResult | null> {
+  const [cv, storedIndex] = await Promise.all([getOpenCv(), loadDescriptorIndex(descriptorMeta)]); const objectUrl = URL.createObjectURL(file);
   try {
     const queryImage = await loadImage(objectUrl); const query = extractFeatures(cv, queryImage); let best: MatchResult | null = null;
-    const shortlist = cards.map((card) => ({ card, score: index[card.id] ? coarseSimilarity(query.coarse, index[card.id]) : 0 })).sort((a, b) => b.score - a.score).slice(0, 20).map((item) => item.card);
+    const shortlist = cards.map((card) => ({ card, score: index[card.id] ? coarseSimilarity(query.coarse, index[card.id]) : 0 })).sort((a, b) => b.score - a.score).slice(0, 100).map((item) => item.card);
     try {
       for (let candidateIndex = 0; candidateIndex < shortlist.length; candidateIndex += 1) {
-        const image = await loadImage(shortlist[candidateIndex].image); const reference = extractFeatures(cv, image, false);
-        try {
-          const result = compareFeatures(cv, query, reference);
-          if (!best || result.score > best.confidence) best = { card: shortlist[candidateIndex], confidence: result.score, goodMatches: result.good, inlierRatio: result.inlierRatio };
-        } finally { reference.cleanup(); }
+        const reference = storedIndex.get(shortlist[candidateIndex].id); if (!reference) continue;
+        const result = compareFeatures(cv, query, reference);
+        if (!best || result.score > best.confidence) best = { card: shortlist[candidateIndex], confidence: result.score, goodMatches: result.good, inlierRatio: result.inlierRatio, spatialCoverage: result.spatialCoverage };
         onProgress?.(candidateIndex + 1, shortlist.length);
-        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        if (candidateIndex % 5 === 4) await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
       }
     } finally { query.cleanup(); }
-    return best && best.goodMatches >= 10 && best.inlierRatio >= 0.28 && best.confidence >= 0.3 ? best : null;
+    return best && best.goodMatches >= 12 && best.inlierRatio >= 0.32 && best.spatialCoverage >= 0.04 && best.confidence >= 0.35 ? best : null;
   } finally { URL.revokeObjectURL(objectUrl); }
 }

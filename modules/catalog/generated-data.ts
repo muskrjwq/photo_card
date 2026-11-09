@@ -10,3 +10,8 @@ export const catalogCards = generatedCatalog.cards as unknown as CatalogCard[];
 export const collections = generatedCatalog.collections;
 export const members = [...generatedCatalog.members, "단체", "유닛"];
 export const recognitionIndex = generatedCatalog.features as Record<string, RecognitionIndexEntry>;
+export const recognitionDescriptorIndex = generatedCatalog.descriptorIndex as {
+  url: string;
+  version: number;
+  descriptorSize: number;
+};

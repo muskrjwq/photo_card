@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { catalogCards, collections, members, recognitionIndex, type CatalogCard } from "@/modules/catalog";
+import { catalogCards, collections, members, recognitionDescriptorIndex, recognitionIndex, type CatalogCard } from "@/modules/catalog";
 import { matchPhotoCard, type MatchResult } from "@/modules/catalog/opencv-matcher";
 
 type View = "catalog" | "recognize" | "collection" | "settings";
@@ -75,7 +75,7 @@ function RecognizeView({ addOwned }: { addOwned: (id: string) => void }) {
     if (!file) return; if (file.size > 15 * 1024 * 1024) { setStatus("error"); return; }
     const objectUrl = URL.createObjectURL(file); setPreview(objectUrl); setStatus("scanning"); setMatch(null); setProgress(0);
     try {
-      const result = await matchPhotoCard(file, catalogCards, recognitionIndex, (done, total) => setProgress(Math.round(done / total * 100)));
+      const result = await matchPhotoCard(file, catalogCards, recognitionIndex, recognitionDescriptorIndex, (done, total) => setProgress(Math.round(done / total * 100)));
       setMatch(result); setStatus(result ? "done" : "empty");
     } catch (error) { console.error(error); setStatus("error"); }
   };

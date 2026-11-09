@@ -1,0 +1,18 @@
+# 이미지 인식 인덱스
+
+`npm run catalog:generate`는 `data/rescene/rescene_photocards.csv`와 `public/rescene_poca`를 읽어 다음 파일을 생성합니다.
+
+- `rescene-catalog.generated.json`: 포카 명부, dHash, 명암 히스토그램
+- `public/rescene-recognition-index.bin`: 포카별 ORB 특징점 좌표와 기술자
+
+이미지 확장자는 고정하지 않습니다. CSV의 `cardId`와 같은 파일명의 실제 이미지를 찾아 사용하므로 PNG, JPG, WebP를 사용할 수 있습니다. 이미지나 메타데이터가 바뀌면 생성 명령을 다시 실행해야 합니다.
+
+## 인식 순서
+
+1. 업로드 사진에서 카드 외곽을 찾아 원근을 보정합니다.
+2. dHash와 히스토그램으로 전체 명부에서 후보 100장을 고릅니다.
+3. 사전 생성된 ORB 기술자와 업로드 사진의 기술자를 비교합니다.
+4. RANSAC으로 일치점의 기하 관계와 공간 분포를 검증합니다.
+5. 최소 일치점, 인라이어 비율, 공간 범위를 모두 만족할 때만 결과를 반환합니다.
+
+이미지와 인식은 브라우저 안에서 처리되며 외부 AI API나 토큰을 사용하지 않습니다.
