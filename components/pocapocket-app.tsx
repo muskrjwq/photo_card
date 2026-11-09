@@ -6,8 +6,8 @@ import {
   Settings2, Share2, ShieldCheck, Sparkles, Upload, Users, X,
 } from "lucide-react";
 import Image from "next/image";
-import { useMemo, useRef, useState } from "react";
-import { catalogCards, collections, members, type CatalogCard } from "@/modules/catalog";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { catalogCards, collections, members, recognitionIndex, type CatalogCard } from "@/modules/catalog";
 import { matchPhotoCard, type MatchResult } from "@/modules/catalog/opencv-matcher";
 
 type View = "catalog" | "recognize" | "collection" | "settings";
@@ -50,17 +50,20 @@ function CatalogView({ owned, toggleOwned, globalBlur, setView }: { owned: strin
   const [member, setMember] = useState("전체");
   const [collection, setCollection] = useState("모든 앨범 · 이벤트");
   const [query, setQuery] = useState("");
+  const [visibleCount, setVisibleCount] = useState(40);
   const filtered = useMemo(() => catalogCards.filter((card) =>
     (member === "전체" || card.member === member || (member === "단체" && card.kind === "group") || (member === "유닛" && card.kind === "unit")) &&
     (collection === "모든 앨범 · 이벤트" || card.collection === collection) && `${card.member} ${card.name} ${card.collection} ${card.source}`.toLowerCase().includes(query.toLowerCase())
   ), [member, collection, query]);
+  useEffect(() => setVisibleCount(40), [member, collection, query]);
   return <>
     <section className="hero"><div><span className="eyebrow"><span /> RESCENE PHOTOCARD ARCHIVE</span><h1><span>리센느의 모든 순간을</span><br /><em>한 장씩, 차곡차곡.</em></h1><p>앨범부터 이벤트 특전까지. 포카를 찾고, 기록하고,<br className="desktop-only" /> 나만의 수집 앨범을 완성해 보세요.</p><div className="hero-actions"><button className="primary-button" onClick={() => setView("recognize")}><Camera size={18} /> 사진으로 포카 찾기</button><button className="text-button" onClick={() => document.getElementById("catalog-grid")?.scrollIntoView({ behavior: "smooth" })}>명부 둘러보기 <ArrowRight size={17} /></button></div></div>
       <div className="hero-deck" aria-label="포카 예시"><div className="deck-card deck-left"><CardArtwork card={catalogCards[2]} /></div><div className="deck-card deck-center"><CardArtwork card={catalogCards[0]} priority /></div><div className="deck-card deck-right"><CardArtwork card={catalogCards[4]} /></div><span className="spark spark-one">✦</span><span className="spark spark-two">✦</span><span className="deck-note">현재 <strong>{catalogCards.length}</strong>장의 포카가<br />정리되어 있어요</span></div>
     </section>
     <section className="catalog-section" id="catalog-grid"><div className="section-heading"><div><span className="section-kicker">PHOTOCARD LIST</span><h2>포카 명부</h2><p>멤버와 앨범을 골라 원하는 포카를 찾아보세요.</p></div><label className="catalog-search"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="포카명, 멤버, 출처 검색" /></label></div>
       <Filters member={member} setMember={setMember} collection={collection} setCollection={setCollection} /><div className="result-bar"><span><strong>{filtered.length}</strong>장의 포카</span><button><Filter size={14} /> 최신 등록순 <ChevronDown size={13} /></button></div>
-      <div className="card-grid">{filtered.map((card) => <PhotoCard key={card.id} card={card} owned={owned.includes(card.id)} onToggle={() => toggleOwned(card.id)} globalBlur={globalBlur} />)}</div>
+      <div className="card-grid">{filtered.slice(0, visibleCount).map((card) => <PhotoCard key={card.id} card={card} owned={owned.includes(card.id)} onToggle={() => toggleOwned(card.id)} globalBlur={globalBlur} />)}</div>
+      {visibleCount < filtered.length && <button className="load-more" onClick={() => setVisibleCount((count) => count + 40)}>포카 더 보기 <span>{Math.min(visibleCount, filtered.length)} / {filtered.length}</span></button>}
       {filtered.length === 0 && <div className="empty-state"><Search size={32} /><h3>조건에 맞는 포카가 없어요</h3><p>필터나 검색어를 바꿔보세요.</p></div>}
     </section>
   </>;
@@ -72,7 +75,7 @@ function RecognizeView({ addOwned }: { addOwned: (id: string) => void }) {
     if (!file) return; if (file.size > 15 * 1024 * 1024) { setStatus("error"); return; }
     const objectUrl = URL.createObjectURL(file); setPreview(objectUrl); setStatus("scanning"); setMatch(null); setProgress(0);
     try {
-      const result = await matchPhotoCard(file, catalogCards, (done, total) => setProgress(Math.round(done / total * 100)));
+      const result = await matchPhotoCard(file, catalogCards, recognitionIndex, (done, total) => setProgress(Math.round(done / total * 100)));
       setMatch(result); setStatus(result ? "done" : "empty");
     } catch (error) { console.error(error); setStatus("error"); }
   };
@@ -106,7 +109,7 @@ function SettingsView({ globalBlur, setGlobalBlur }: { globalBlur: boolean; setG
 }
 
 export default function PocaPocketApp() {
-  const [view, setView] = useState<View>("catalog"); const [owned, setOwned] = useState<string[]>(["scene-001", "scene-003", "scene-006"]); const [globalBlur, setGlobalBlur] = useState(false); const [mobileOpen, setMobileOpen] = useState(false); const [toast, setToast] = useState("");
+  const [view, setView] = useState<View>("catalog"); const [owned, setOwned] = useState<string[]>(catalogCards.slice(0, 3).map((card) => card.id)); const [globalBlur, setGlobalBlur] = useState(false); const [mobileOpen, setMobileOpen] = useState(false); const [toast, setToast] = useState("");
   const toggleOwned = (id: string) => setOwned((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   const addOwned = (id: string) => { setOwned((current) => current.includes(id) ? current : [...current, id]); setToast("나의 포카에 추가했어요"); window.setTimeout(() => setToast(""), 2400); };
   const navigate = (next: View) => { setView(next); setMobileOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); };

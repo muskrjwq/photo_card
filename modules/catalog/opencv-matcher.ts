@@ -1,9 +1,10 @@
 "use client";
 
 import type { CatalogCard } from "./types";
+import type { RecognitionIndexEntry } from "./generated-data";
 
 type Cv = any;
-type FeatureSet = { keypoints: any; descriptors: any; cleanup: () => void };
+type FeatureSet = { keypoints: any; descriptors: any; coarse: RecognitionIndexEntry; cleanup: () => void };
 
 let runtime: Promise<Cv> | null = null;
 
@@ -97,8 +98,29 @@ function extractFeatures(cv: Cv, image: HTMLImageElement): FeatureSet {
   const keypoints = new cv.KeyPointVector(); const descriptors = new cv.Mat(); const mask = new cv.Mat();
   const orb = new cv.ORB(800, 1.2, 8, 24, 0, 2, cv.ORB_HARRIS_SCORE, 31, 12);
   orb.detectAndCompute(gray, mask, keypoints, descriptors);
-  source.delete(); normalized.delete(); gray.delete(); mask.delete(); orb.delete();
-  return { keypoints, descriptors, cleanup: () => { keypoints.delete(); descriptors.delete(); } };
+  const hashMat = new cv.Mat(); const histogramMat = new cv.Mat();
+  cv.resize(gray, hashMat, new cv.Size(9, 8), 0, 0, cv.INTER_AREA);
+  cv.resize(gray, histogramMat, new cv.Size(64, 96), 0, 0, cv.INTER_AREA);
+  let hash = 0n;
+  for (let y = 0; y < 8; y += 1) for (let x = 0; x < 8; x += 1) hash = (hash << 1n) | BigInt(hashMat.data[y * 9 + x] > hashMat.data[y * 9 + x + 1] ? 1 : 0);
+  const histogram = Array(16).fill(0);
+  for (const value of histogramMat.data as Uint8Array) histogram[Math.min(15, Math.floor(value / 16))] += 1;
+  const total = histogramMat.data.length;
+  const coarse = { dHash: hash.toString(16).padStart(16, "0"), histogram: histogram.map((count) => count / total) };
+  source.delete(); normalized.delete(); gray.delete(); mask.delete(); orb.delete(); hashMat.delete(); histogramMat.delete();
+  return { keypoints, descriptors, coarse, cleanup: () => { keypoints.delete(); descriptors.delete(); } };
+}
+
+function hammingHex(a: string, b: string) {
+  let value = BigInt(`0x${a}`) ^ BigInt(`0x${b}`); let count = 0;
+  while (value) { count += Number(value & 1n); value >>= 1n; }
+  return count;
+}
+
+function coarseSimilarity(query: RecognitionIndexEntry, reference: RecognitionIndexEntry) {
+  const hashScore = 1 - hammingHex(query.dHash, reference.dHash) / 64;
+  const histogramScore = query.histogram.reduce((sum, value, index) => sum + Math.min(value, reference.histogram[index] ?? 0), 0);
+  return hashScore * 0.72 + histogramScore * 0.28;
 }
 
 function compareFeatures(cv: Cv, query: FeatureSet, reference: FeatureSet) {
@@ -129,18 +151,19 @@ function compareFeatures(cv: Cv, query: FeatureSet, reference: FeatureSet) {
   return { score, good, inlierRatio };
 }
 
-export async function matchPhotoCard(file: File, cards: CatalogCard[], onProgress?: (done: number, total: number) => void): Promise<MatchResult | null> {
+export async function matchPhotoCard(file: File, cards: CatalogCard[], index: Record<string, RecognitionIndexEntry>, onProgress?: (done: number, total: number) => void): Promise<MatchResult | null> {
   const cv = await getOpenCv(); const objectUrl = URL.createObjectURL(file);
   try {
     const queryImage = await loadImage(objectUrl); const query = extractFeatures(cv, queryImage); let best: MatchResult | null = null;
+    const shortlist = cards.map((card) => ({ card, score: index[card.id] ? coarseSimilarity(query.coarse, index[card.id]) : 0 })).sort((a, b) => b.score - a.score).slice(0, 20).map((item) => item.card);
     try {
-      for (let index = 0; index < cards.length; index += 1) {
-        const image = await loadImage(cards[index].image); const reference = extractFeatures(cv, image);
+      for (let candidateIndex = 0; candidateIndex < shortlist.length; candidateIndex += 1) {
+        const image = await loadImage(shortlist[candidateIndex].image); const reference = extractFeatures(cv, image);
         try {
           const result = compareFeatures(cv, query, reference);
-          if (!best || result.score > best.confidence) best = { card: cards[index], confidence: result.score, goodMatches: result.good, inlierRatio: result.inlierRatio };
+          if (!best || result.score > best.confidence) best = { card: shortlist[candidateIndex], confidence: result.score, goodMatches: result.good, inlierRatio: result.inlierRatio };
         } finally { reference.cleanup(); }
-        onProgress?.(index + 1, cards.length);
+        onProgress?.(candidateIndex + 1, shortlist.length);
         await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
       }
     } finally { query.cleanup(); }

@@ -3,7 +3,8 @@
 포카 명부만 필요한 팬사이트를 위한 독립 모듈입니다.
 
 - `types.ts`: 포카와 기능 설정의 공개 타입
-- `data.ts`: 교체 가능한 예시 메타데이터
+- `generated-data.ts`: CSV에서 생성된 실제 명부와 인식 인덱스
+- `rescene-catalog.generated.json`: 빌드 시 생성되는 명부 데이터
 - `config.ts`: 기능 플래그와 이미지 정책
 - `matcher.ts`: 가벼운 1차 후보 점수
 - `opencv-matcher.ts`: 브라우저 OpenCV.js 정밀 매칭

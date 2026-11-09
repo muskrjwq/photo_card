@@ -52,7 +52,9 @@ site.config.ts            사이트별 최상위 설정
 
 ## 데이터 추가
 
-`modules/catalog/data.ts`의 `CatalogCard` 항목과 `public/cards` 이미지를 추가합니다. 운영 환경에서는 JSON/CSV 가져오기 어댑터나 D1/PostgreSQL 저장소 구현으로 교체할 수 있습니다. 이미지는 저작권 정책에 따라 원본, 일괄 블러, 소장자만 원본 중 하나를 선택하세요.
+리센느 원본 메타데이터는 `data/rescene/rescene_photocards.csv`, 이미지는 `public/rescene_poca`에서 관리합니다. CSV의 `localPath`는 `/rescene_poca/{cardId}.{실제 확장자}` 형식이며 외부 이미지 URL은 저장하지 않습니다.
+
+`npm run catalog:generate`는 2,220장의 명부 JSON과 dHash·히스토그램 인식 인덱스를 생성합니다. `npm run dev`와 `npm run build`가 이 작업을 자동 실행합니다. 운영 환경에서는 CSV 어댑터를 D1/PostgreSQL 저장소로 교체할 수 있으며, 이미지는 저작권 정책에 따라 원본, 일괄 블러, 소장자만 원본 중 하나를 선택하세요.
 
 ## 기능 설정
 
