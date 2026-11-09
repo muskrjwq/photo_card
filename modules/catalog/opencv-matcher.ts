@@ -17,6 +17,13 @@ export interface MatchResult {
   goodMatches: number;
   inlierRatio: number;
   spatialCoverage: number;
+  coarseScore: number;
+  rankingScore: number;
+}
+
+export interface MatchResponse {
+  candidates: MatchResult[];
+  confident: boolean;
 }
 
 async function getOpenCv(): Promise<Cv> {
@@ -230,10 +237,10 @@ function compareFeatures(cv: Cv, query: FeatureSet, stored: StoredFeatures) {
   return { score, good, inlierRatio, spatialCoverage };
 }
 
-export async function matchPhotoCard(file: File, cards: CatalogCard[], index: Record<string, RecognitionIndexEntry>, descriptorMeta: DescriptorIndexMeta, onProgress?: (done: number, total: number) => void): Promise<MatchResult | null> {
+export async function matchPhotoCard(file: File, cards: CatalogCard[], index: Record<string, RecognitionIndexEntry>, descriptorMeta: DescriptorIndexMeta, onProgress?: (done: number, total: number) => void): Promise<MatchResponse | null> {
   const [cv, storedIndex] = await Promise.all([getOpenCv(), loadDescriptorIndex(descriptorMeta)]); const objectUrl = URL.createObjectURL(file);
   try {
-    const queryImage = await loadImage(objectUrl); const query = extractFeatures(cv, queryImage); let best: MatchResult | null = null;
+    const queryImage = await loadImage(objectUrl); const query = extractFeatures(cv, queryImage); const possibleMatches: MatchResult[] = [];
     const rankedCandidates = cards.map((card) => ({ card, score: index[card.id] ? coarseSimilarity(query.coarse, index[card.id]) : 0 })).sort((a, b) => b.score - a.score);
     const shortlist = rankedCandidates.slice(0, 100).map((item) => item.card); const diagnosticResults: Array<{ id: string; score: number; good: number; inlierRatio: number; spatialCoverage: number }> = [];
     try {
@@ -241,13 +248,19 @@ export async function matchPhotoCard(file: File, cards: CatalogCard[], index: Re
         const reference = storedIndex.get(shortlist[candidateIndex].id); if (!reference) continue;
         const result = compareFeatures(cv, query, reference);
         diagnosticResults.push({ id: shortlist[candidateIndex].id, score: result.score, good: result.good, inlierRatio: result.inlierRatio, spatialCoverage: result.spatialCoverage });
-        const eligible = result.good >= 12 && result.inlierRatio >= 0.35 && result.spatialCoverage >= 0.035;
-        if (eligible && (!best || result.score > best.confidence)) best = { card: shortlist[candidateIndex], confidence: result.score, goodMatches: result.good, inlierRatio: result.inlierRatio, spatialCoverage: result.spatialCoverage };
+        const coarseScore = rankedCandidates[candidateIndex].score; const rankingScore = result.score * 0.7 + coarseScore * 0.3;
+        const eligible = result.good >= 10 && result.inlierRatio >= 0.28 && result.spatialCoverage >= 0.025 && result.score >= 0.35 && coarseScore >= 0.6;
+        if (eligible) possibleMatches.push({ card: shortlist[candidateIndex], confidence: result.score, goodMatches: result.good, inlierRatio: result.inlierRatio, spatialCoverage: result.spatialCoverage, coarseScore, rankingScore });
         onProgress?.(candidateIndex + 1, shortlist.length);
         if (candidateIndex % 5 === 4) await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
       }
     } finally { query.cleanup(); }
     if (new URLSearchParams(window.location.search).has("recognitionDebug")) console.info("RECOGNITION_DEBUG", JSON.stringify({ coarse: rankedCandidates.slice(0, 100).map((item, rank) => ({ id: item.card.id, rank: rank + 1, score: item.score })), verified: diagnosticResults.sort((a, b) => b.score - a.score) }));
-    return best && best.confidence >= 0.45 ? best : null;
+    const candidates = possibleMatches.sort((a, b) => b.rankingScore - a.rankingScore).slice(0, 4);
+    if (!candidates.length) return null;
+    const primary = candidates[0]; const margin = primary.rankingScore - (candidates[1]?.rankingScore ?? 0);
+    const strongGeometry = primary.goodMatches >= 35 && primary.inlierRatio >= 0.5 && primary.spatialCoverage >= 0.06 && primary.confidence >= 0.65;
+    const abundantEvidence = primary.goodMatches >= 60 && primary.inlierRatio >= 0.42 && primary.spatialCoverage >= 0.05;
+    return { candidates, confident: (strongGeometry || abundantEvidence) && margin >= 0.04 };
   } finally { URL.revokeObjectURL(objectUrl); }
 }
