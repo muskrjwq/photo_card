@@ -8,6 +8,7 @@ import {
 import Image from "next/image";
 import { useMemo, useRef, useState } from "react";
 import { catalogCards, collections, members, type CatalogCard } from "@/modules/catalog";
+import { matchPhotoCard, type MatchResult } from "@/modules/catalog/opencv-matcher";
 
 type View = "catalog" | "recognize" | "collection" | "settings";
 const navItems = [
@@ -66,14 +67,21 @@ function CatalogView({ owned, toggleOwned, globalBlur, setView }: { owned: strin
 }
 
 function RecognizeView({ addOwned }: { addOwned: (id: string) => void }) {
-  const inputRef = useRef<HTMLInputElement>(null); const [preview, setPreview] = useState<string | null>(null); const [status, setStatus] = useState<"idle" | "scanning" | "done">("idle"); const [match, setMatch] = useState<CatalogCard | null>(null);
-  const choose = (file?: File) => { if (!file) return; const objectUrl = URL.createObjectURL(file); setPreview(objectUrl); setStatus("scanning"); setMatch(null); window.setTimeout(() => { setMatch(catalogCards[1]); setStatus("done"); }, 1850); };
-  const reset = () => { if (preview) URL.revokeObjectURL(preview); setPreview(null); setStatus("idle"); setMatch(null); };
+  const inputRef = useRef<HTMLInputElement>(null); const [preview, setPreview] = useState<string | null>(null); const [status, setStatus] = useState<"idle" | "scanning" | "done" | "empty" | "error">("idle"); const [match, setMatch] = useState<MatchResult | null>(null); const [progress, setProgress] = useState(0);
+  const choose = async (file?: File) => {
+    if (!file) return; if (file.size > 15 * 1024 * 1024) { setStatus("error"); return; }
+    const objectUrl = URL.createObjectURL(file); setPreview(objectUrl); setStatus("scanning"); setMatch(null); setProgress(0);
+    try {
+      const result = await matchPhotoCard(file, catalogCards, (done, total) => setProgress(Math.round(done / total * 100)));
+      setMatch(result); setStatus(result ? "done" : "empty");
+    } catch (error) { console.error(error); setStatus("error"); }
+  };
+  const reset = () => { if (preview) URL.revokeObjectURL(preview); setPreview(null); setStatus("idle"); setMatch(null); setProgress(0); };
   return <section className="tool-page"><div className="tool-intro"><span className="eyebrow"><span /> ON-DEVICE MATCHING</span><h1>이 포카, 어떤 포카일까요?</h1><p>사진 한 장이면 명부에서 가장 비슷한 포카를 찾아드려요.<br />사진은 서버로 전송되지 않고 내 기기에서만 분석됩니다.</p></div>
     <div className="recognizer-shell"><div className="privacy-pill"><ShieldCheck size={15} /> 100% 기기 내 분석 · 업로드 비용 0원</div>
       {!preview ? <button className="drop-zone" onClick={() => inputRef.current?.click()} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); choose(e.dataTransfer.files[0]); }}><span className="upload-icon"><ImagePlus size={30} /></span><strong>포카 사진을 올려주세요</strong><span>정면에 가깝고, 카드 전체가 보이는 사진일수록 정확해요.</span><b><Upload size={17} /> 사진 선택하기</b><small>JPG, PNG, WEBP · 최대 15MB</small></button> :
       <div className="scan-layout"><div className="uploaded-photo"><Image src={preview} alt="업로드한 포카" fill unoptimized /><span className={status === "scanning" ? "scan-line" : ""} /><button onClick={reset}><X size={17} /></button></div><div className="scan-result">
-        {status === "scanning" ? <><span className="pulse-logo">p</span><h3>특징을 비교하고 있어요</h3><p>원근 보정 · 색상 특징 · ORB 특징점</p><div className="progress"><span /></div><small>명부의 {catalogCards.length}장과 로컬에서 비교 중</small></> : match && <><span className="match-label"><Sparkles size={14} /> 가장 유력한 결과</span><div className="matched-card"><CardArtwork card={match} /><div><span>{match.member}</span><h3>{match.name}</h3><p>{match.collection}<br />{match.source}</p><strong>96.4% 일치</strong></div></div><div className="match-actions"><button className="primary-button" onClick={() => addOwned(match.id)}><Plus size={17} /> 나의 포카에 추가</button><button className="secondary-button" onClick={reset}>다른 사진 찾기</button></div><button className="not-match">결과가 맞지 않나요? 포카 추가 요청하기</button></>}
+        {status === "scanning" ? <><span className="pulse-logo">p</span><h3>특징을 비교하고 있어요</h3><p>원근 보정 · ORB 특징점 · RANSAC 검증</p><div className="progress"><span style={{ width: `${Math.max(8, progress)}%` }} /></div><small>명부의 {catalogCards.length}장과 로컬에서 비교 중 · {progress}%</small></> : status === "done" && match ? <><span className="match-label"><Sparkles size={14} /> 가장 유력한 결과</span><div className="matched-card"><CardArtwork card={match.card} /><div><span>{match.card.member}</span><h3>{match.card.name}</h3><p>{match.card.collection}<br />{match.card.source}</p><strong>{Math.round(match.confidence * 100)}% 일치 · 검증 특징점 {match.goodMatches}개</strong></div></div><div className="match-actions"><button className="primary-button" onClick={() => addOwned(match.card.id)}><Plus size={17} /> 나의 포카에 추가</button><button className="secondary-button" onClick={reset}>다른 사진 찾기</button></div><button className="not-match">결과가 맞지 않나요? 포카 추가 요청하기</button></> : <><span className="empty-match-icon"><Search size={25} /></span><h3>{status === "error" ? "사진을 분석하지 못했어요" : "일치하는 포카가 없어요"}</h3><p>{status === "error" ? "15MB 이하 JPG, PNG, WEBP 파일로 다시 시도해 주세요." : "확신도가 낮아 임의로 매칭하지 않았어요. 비공개 감춤 상태로 추가를 요청할 수 있어요."}</p><div className="match-actions"><button className="primary-button">포카 추가 요청</button><button className="secondary-button" onClick={reset}>다른 사진 찾기</button></div></>}
       </div></div>}<input ref={inputRef} type="file" hidden accept="image/jpeg,image/png,image/webp" onChange={(e) => choose(e.target.files?.[0])} />
     </div><div className="recognize-tips"><div><b>01</b><span><strong>카드 전체가 보이게</strong><small>모서리 4개를 프레임 안에 담아주세요.</small></span></div><div><b>02</b><span><strong>반사를 피해 밝게</strong><small>부드러운 자연광이 좋아요.</small></span></div><div><b>03</b><span><strong>기울어져도 괜찮아요</strong><small>자동 원근 보정으로 바로잡아요.</small></span></div></div>
   </section>;
