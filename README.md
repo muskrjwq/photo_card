@@ -29,7 +29,7 @@ modules/catalog/         재사용 가능한 명부 코어
   data.ts                예시 포카/멤버/컬렉션 데이터
   types.ts               공개 데이터 타입
   config.ts              기능 및 이미지 정책 기본값
-  matcher.ts             무료 이미지 매칭 점수 유틸리티
+  xfeat-matcher.ts       브라우저 XFeat 이미지 매칭
 public/cards/             교체 가능한 예시 이미지
 site.config.ts            사이트별 최상위 설정
 ```
