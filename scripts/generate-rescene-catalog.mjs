@@ -24,7 +24,7 @@ function parseCsv(text) {
   return rows.map((cells) => Object.fromEntries(headers.map((header, index) => [header, cells[index] ?? ""])));
 }
 
-const csvNames = (await readdir(dataDirectory)).filter((name) => name.toLowerCase().endsWith("photocards.csv")).sort();
+const csvNames = (await readdir(dataDirectory)).filter((name) => name.toLowerCase().endsWith(".csv")).sort();
 const rows = (await Promise.all(csvNames.map(async (name) => parseCsv(await readFile(path.join(dataDirectory, name), "utf8"))))).flat();
 const imageNames = (await readdir(imageDirectory, { recursive: true })).filter((name) => /\.(png|jpe?g|webp)$/i.test(name));
 const imageById = new Map();
@@ -36,13 +36,13 @@ for (const name of imageNames) {
 const duplicateIds = rows.filter((row, index) => rows.findIndex((candidate) => candidate.cardId === row.cardId) !== index);
 if (duplicateIds.length) throw new Error(`Duplicate cardId: ${duplicateIds[0].cardId}`);
 
-const albumCategories = new Set(["Re:Scene", "Scenedrome", "Glow Up", "Dearest", "Lip Bomb - album photocards"]);
+const albumCategories = new Set(["Re:Scene", "Scenedrome", "Glow Up", "Dearest", "Lip Bomb - album photocards", "Pulse"]);
 const collectionAliases = new Map([
   ["Lip Bomb - album photocards", "Lip Bomb"],
   ["Lip Bomb - benefits", "Lip Bomb"],
 ]);
 const collectionOrder = [
-  "Re:Scene", "Scenedrome", "Glow Up", "Dearest", "Lip Bomb",
+  "Re:Scene", "Scenedrome", "Glow Up", "Dearest", "Lip Bomb", "Pulse",
   "merch", "fanclub", "KCON Japan", "misc", "fancon - Project 326",
   "Casa Verdi", "Dominos", "Pretty Girl", "Epais", "HOLLYS",
 ];
@@ -57,7 +57,7 @@ for (let index = 0; index < rows.length; index += 1) {
     id: row.cardId,
     code: row.cardId.toUpperCase(),
     member: row.memberName,
-    kind: "member",
+    kind: row.memberName === "유닛" ? "unit" : row.memberName === "단체" ? "group" : "member",
     name: row.name,
     collection,
     category: albumCategories.has(row.category) ? "album" : "event",
