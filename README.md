@@ -38,23 +38,21 @@ site.config.ts            사이트별 최상위 설정
 
 ## 이미지 인식 설계
 
-서버 AI나 유료 토큰을 사용하지 않습니다. 실제 데이터셋을 넣을 때 다음 파이프라인으로 인덱스를 생성합니다.
+서버 AI나 유료 토큰을 사용하지 않습니다. Apache-2.0 XFeat 사전학습 모델을 ONNX Runtime Web으로 사용자 브라우저에서 실행합니다.
 
-1. 카드 외곽선 검출 후 2:3 비율로 원근 보정
-2. pHash와 HSV 히스토그램으로 전체 명부에서 상위 후보만 선별
-3. OpenCV.js ORB 특징점과 Hamming KNN으로 정밀 비교
-4. RANSAC homography의 인라이어 비율로 오매칭 제거
-5. 확신도가 낮으면 강제 매칭하지 않고 `감춤` 상태와 추가 요청 선택 제공
+1. XFeat가 등록 원본과 촬영 사진에서 학습된 특징점·기술자를 추출
+2. 전체 이미지의 XFeat 표현으로 후보 선별
+3. 상호 최근접 코사인 유사도로 특징점 대응
+4. RANSAC homography로 기하 관계와 공간 분포 검증
+5. 확신도가 낮으면 최대 4개 후보를 보여 사용자가 선택
 
-이 구조는 조명 변화에는 색상 정규화와 pHash, 기울기·회전에는 ORB와 homography로 대응합니다. OpenCV.js는 브라우저 WebAssembly에서 실행되므로 사진을 외부 서버로 보낼 필요가 없습니다. 정확도 검증은 실제 포카 원본과 다양한 촬영 샘플이 들어온 뒤 데이터셋 기준으로 임계값을 보정해야 합니다.
-
-권장 운영값: 512px 정규화, ORB 800 특징점, Lowe ratio 0.75, 최소 good match 18, RANSAC reprojection 4px, 인라이어 비율 0.35 이상. 저사양 모바일에서는 pHash 상위 20장에만 ORB를 실행하세요.
+등록 원본의 특징은 `npm run recognition:index`로 미리 생성합니다. 업로드 사진은 서버로 전송하지 않습니다. 현재 구현은 XFeat와 상호 최근접 매칭을 사용하며, 공식 브라우저용 XFeat LighterGlue ONNX가 없어 LighterGlue는 포함하지 않습니다.
 
 ## 데이터 추가
 
 리센느 원본 메타데이터는 `data/rescene/rescene_photocards.csv`, 이미지는 `public/rescene_poca`에서 관리합니다. CSV의 `localPath`는 `/rescene_poca/{cardId}.{실제 확장자}` 형식이며 외부 이미지 URL은 저장하지 않습니다.
 
-`npm run catalog:generate`는 2,220장의 명부 JSON과 dHash·히스토그램 인식 인덱스를 생성합니다. `npm run dev`와 `npm run build`가 이 작업을 자동 실행합니다. 운영 환경에서는 CSV 어댑터를 D1/PostgreSQL 저장소로 교체할 수 있으며, 이미지는 저작권 정책에 따라 원본, 일괄 블러, 소장자만 원본 중 하나를 선택하세요.
+`npm run catalog:generate`는 2,220장의 명부 JSON을 생성합니다. 이미지가 추가·교체되면 `npm run recognition:index`를 한 번 실행해 XFeat 인덱스를 다시 만드세요. 특징 추출에는 API 토큰이 들지 않으며 로컬 CPU를 사용합니다. 운영 환경에서는 CSV 어댑터를 D1/PostgreSQL 저장소로 교체할 수 있습니다.
 
 ## 기능 설정
 
@@ -62,8 +60,17 @@ site.config.ts            사이트별 최상위 설정
 
 ## 현재 데모 범위
 
-검색, 필터, 소장 체크, 앨범 UI, 이미지 공개 정책과 OpenCV.js 기반 실제 업로드 매칭이 동작합니다. 현재 참조 이미지는 플레이스홀더이므로 실물 촬영 정확도를 평가할 수 없습니다. 운영 전에는 실제 원본·다양한 조명과 각도의 검증 세트로 임계값을 보정하고, 관리자 업로드·검수 API와 영속 저장소를 연결해야 합니다.
+검색, 필터, 소장 체크, 앨범 UI, 이미지 공개 정책과 XFeat 기반 실제 업로드 매칭이 동작합니다. 운영 전에는 실제 원본·다양한 조명과 각도의 검증 세트로 임계값을 보정하고, 관리자 업로드·검수 API와 영속 저장소를 연결해야 합니다.
+
+## 크레딧
+
+- 포카 이미지·메타데이터 출처: [리센느 음원총공팀 포카사전](https://rescene.stream/apps/photocards)
+- 특징 추출: [VERLab XFeat](https://github.com/verlab/accelerated_features), CVPR 2024, Apache-2.0
+- ONNX 변환 모델: [XFeat Image Matching ONNX Sample](https://github.com/Kazuhito00/XFeat-Image-Matching-ONNX-Sample), Apache-2.0
+- 브라우저 추론: [ONNX Runtime Web](https://onnxruntime.ai/docs/get-started/with-javascript/web.html)
+
+제3자 라이선스 원문은 `THIRD_PARTY_LICENSES`에 포함합니다.
 
 ## 라이선스
 
-코드는 MIT 라이선스로 배포할 수 있도록 구성했습니다. 아이돌·소속사·포토카드 이미지의 권리는 각 권리자에게 있으며, 실제 이미지 공개 범위와 2차 사용 조건은 운영자가 별도로 확인해야 합니다.
+프로젝트 코드는 MIT 라이선스로 배포할 수 있도록 구성했습니다. XFeat와 ONNX 변환 모델에는 Apache-2.0이 적용됩니다. 포토카드 이미지와 메타데이터는 위 출처 및 각 권리자의 조건을 따르며 프로젝트 코드 라이선스에 포함되지 않습니다.

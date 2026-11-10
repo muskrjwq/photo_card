@@ -1,18 +1,8 @@
 import generatedCatalog from "./rescene-catalog.generated.json";
+import xfeatIndex from "./xfeat-index.generated.json";
 import type { CatalogCard } from "./types";
-
-export interface RecognitionIndexEntry {
-  dHash: string;
-  histogram: number[];
-  appearance?: number[];
-}
 
 export const catalogCards = generatedCatalog.cards as unknown as CatalogCard[];
 export const collections = generatedCatalog.collections;
 export const members = [...generatedCatalog.members, "단체", "유닛"];
-export const recognitionIndex = generatedCatalog.features as Record<string, RecognitionIndexEntry>;
-export const recognitionDescriptorIndex = generatedCatalog.descriptorIndex as {
-  url: string;
-  version: number;
-  descriptorSize: number;
-};
+export const recognitionXFeatIndex = xfeatIndex;
