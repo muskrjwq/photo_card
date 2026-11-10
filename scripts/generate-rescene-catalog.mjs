@@ -36,21 +36,31 @@ for (const name of imageNames) {
 const duplicateIds = rows.filter((row, index) => rows.findIndex((candidate) => candidate.cardId === row.cardId) !== index);
 if (duplicateIds.length) throw new Error(`Duplicate cardId: ${duplicateIds[0].cardId}`);
 
-const albumCategories = new Set(["Re:Scene", "Glow Up", "Scenedrome", "Dearest"]);
+const albumCategories = new Set(["Re:Scene", "Scenedrome", "Glow Up", "Dearest", "Lip Bomb - album photocards"]);
+const collectionAliases = new Map([
+  ["Lip Bomb - album photocards", "Lip Bomb"],
+  ["Lip Bomb - benefits", "Lip Bomb"],
+]);
+const collectionOrder = [
+  "Re:Scene", "Scenedrome", "Glow Up", "Dearest", "Lip Bomb",
+  "merch", "fanclub", "KCON Japan", "misc", "fancon - Project 326",
+  "Casa Verdi", "Dominos", "Pretty Girl", "Epais", "HOLLYS",
+];
+const collectionRank = new Map(collectionOrder.map((collection, index) => [collection, index]));
 const cards = [];
 const missingImages = [];
 for (let index = 0; index < rows.length; index += 1) {
   const row = rows[index]; const imageName = imageById.get(row.cardId);
   if (!imageName) { missingImages.push(row.cardId); continue; }
-  const expectedPath = `/rescene_poca/${imageName}`;
+  const expectedPath = `/rescene_poca/${imageName}`; const collection = collectionAliases.get(row.category) ?? row.category;
   cards.push({
     id: row.cardId,
     code: row.cardId.toUpperCase(),
     member: row.memberName,
     kind: "member",
     name: row.name,
-    collection: row.category,
-    category: albumCategories.has(row.category) || /album photocards/i.test(row.category) ? "album" : "event",
+    collection,
+    category: albumCategories.has(row.category) ? "album" : "event",
     source: `${row.memberName} #${row.idNumber}`,
     image: expectedPath,
     owners: 0,
@@ -62,6 +72,8 @@ for (let index = 0; index < rows.length; index += 1) {
 
 if (missingImages.length) process.stderr.write(`Skipped ${missingImages.length} cards without images: ${missingImages.join(", ")}\n`);
 
+cards.sort((a, b) => (collectionRank.get(a.collection) ?? Number.MAX_SAFE_INTEGER) - (collectionRank.get(b.collection) ?? Number.MAX_SAFE_INTEGER)
+  || a.idNumber - b.idNumber || a.memberIndex - b.memberIndex || a.name.localeCompare(b.name));
 const collections = [...new Set(cards.map((card) => card.collection))];
 const members = [...new Set(cards.map((card) => card.member))];
 await writeFile(outputPath, `${JSON.stringify({

@@ -11,6 +11,8 @@ import { catalogCards, collections, members, recognitionXFeatIndex, type Catalog
 import { matchPhotoCard, type MatchResponse } from "@/modules/catalog/xfeat-matcher";
 
 type View = "catalog" | "recognize" | "collection" | "settings";
+const albumCollectionNames = collections.filter((collection) => catalogCards.some((card) => card.collection === collection && card.category === "album"));
+const eventCollectionNames = collections.filter((collection) => !albumCollectionNames.includes(collection));
 const navItems = [
   { id: "catalog" as View, label: "포카 명부", icon: BookOpen },
   { id: "recognize" as View, label: "포카 찾기", icon: Camera },
@@ -40,7 +42,7 @@ function PhotoCard({ card, owned, onToggle, globalBlur }: { card: CatalogCard; o
 function Filters({ member, setMember, collection, setCollection }: { member: string; setMember: (v: string) => void; collection: string; setCollection: (v: string) => void }) {
   return <div className="filters" aria-label="포카 필터"><button className={member === "전체" ? "active" : ""} onClick={() => setMember("전체")}>전체</button>
     {members.map((item) => <button key={item} className={member === item ? "active" : ""} onClick={() => setMember(item)}>{item}</button>)}
-    <span className="filter-divider" /><label className="select-wrap"><select value={collection} onChange={(e) => setCollection(e.target.value)}><option>모든 앨범 · 이벤트</option>{collections.map((item) => <option key={item}>{item}</option>)}</select><ChevronDown size={15} /></label>
+    <span className="filter-divider" /><label className="select-wrap"><select value={collection} onChange={(e) => setCollection(e.target.value)}><option>모든 앨범 · 이벤트</option><optgroup label="앨범">{albumCollectionNames.map((item) => <option key={item}>{item}</option>)}</optgroup><optgroup label="이벤트 · 기타">{eventCollectionNames.map((item) => <option key={item}>{item}</option>)}</optgroup></select><ChevronDown size={15} /></label>
   </div>;
 }
 
@@ -59,7 +61,7 @@ function CatalogView({ owned, toggleOwned, globalBlur, setView }: { owned: strin
       <div className="hero-deck" aria-label="포카 예시"><div className="deck-card deck-left"><CardArtwork card={catalogCards[2]} /></div><div className="deck-card deck-center"><CardArtwork card={catalogCards[0]} priority /></div><div className="deck-card deck-right"><CardArtwork card={catalogCards[4]} /></div><span className="spark spark-one">✦</span><span className="spark spark-two">✦</span><span className="deck-note">현재 <strong>{catalogCards.length}</strong>장의 포카가<br />정리되어 있어요</span></div>
     </section>
     <section className="catalog-section" id="catalog-grid"><div className="section-heading"><div><span className="section-kicker">PHOTOCARD LIST</span><h2>포카 명부</h2><p>멤버와 앨범을 골라 원하는 포카를 찾아보세요.</p></div><label className="catalog-search"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="포카명, 멤버, 출처 검색" /></label></div>
-      <Filters member={member} setMember={setMember} collection={collection} setCollection={setCollection} /><div className="result-bar"><span><strong>{filtered.length}</strong>장의 포카</span><button><Filter size={14} /> 최신 등록순 <ChevronDown size={13} /></button></div>
+      <Filters member={member} setMember={setMember} collection={collection} setCollection={setCollection} /><div className="result-bar"><span><strong>{filtered.length}</strong>장의 포카</span><button><Filter size={14} /> 발매 · 공개 순 <ChevronDown size={13} /></button></div>
       <div className="card-grid">{filtered.slice(0, visibleCount).map((card) => <PhotoCard key={card.id} card={card} owned={owned.includes(card.id)} onToggle={() => toggleOwned(card.id)} globalBlur={globalBlur} />)}</div>
       {visibleCount < filtered.length && <button className="load-more" onClick={() => setVisibleCount((count) => count + 40)}>포카 더 보기 <span>{Math.min(visibleCount, filtered.length)} / {filtered.length}</span></button>}
       {filtered.length === 0 && <div className="empty-state"><Search size={32} /><h3>조건에 맞는 포카가 없어요</h3><p>필터나 검색어를 바꿔보세요.</p></div>}
