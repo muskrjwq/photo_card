@@ -2,7 +2,7 @@
 
 import {
   ArrowRight, BookOpen, Camera, Check, ChevronDown, CircleHelp, Code2,
-  Eye, EyeOff, Filter, Heart, ImagePlus, LayoutGrid, Menu, Plus, Search,
+  Eye, Filter, Heart, ImagePlus, LayoutGrid, Menu, Plus, Search,
   Settings2, Share2, ShieldCheck, Sparkles, Upload, Users, X,
 } from "lucide-react";
 import Image from "next/image";
@@ -24,7 +24,6 @@ function Logo() {
 function CardArtwork({ card, blurred = false, priority = false }: { card: CatalogCard; blurred?: boolean; priority?: boolean }) {
   return <div className={`artwork ${blurred ? "is-blurred" : ""}`}>
     <Image src={card.image} alt={`${card.member} ${card.name}`} fill sizes="(max-width: 760px) 44vw, 220px" priority={priority} />
-    {blurred && <span className="blur-label"><EyeOff size={14} /> 이미지 숨김</span>}
   </div>;
 }
 
