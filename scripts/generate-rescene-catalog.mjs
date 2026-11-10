@@ -2,6 +2,7 @@ import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import cvModule from "@techstark/opencv-js";
+import { createHash } from "node:crypto";
 
 const projectRoot = process.cwd();
 const csvPath = path.join(projectRoot, "data", "rescene", "rescene_photocards.csv");
@@ -44,8 +45,9 @@ async function makeFeatures(filePath) {
   const hashPixels = await sharp(filePath).greyscale().resize(9, 8, { fit: "fill" }).raw().toBuffer();
   const histogramPixels = await sharp(filePath).greyscale().resize(64, 96, { fit: "fill" }).raw().toBuffer();
   const histogram = Array(16).fill(0);
+  const appearance = await sharp(filePath).greyscale().resize(16, 24, { fit: "fill" }).raw().toBuffer();
   for (const value of histogramPixels) histogram[Math.min(15, Math.floor(value / 16))] += 1;
-  return { dHash: makeHash(hashPixels), histogram: histogram.map((count) => Number((count / histogramPixels.length).toFixed(6))) };
+  return { dHash: makeHash(hashPixels), histogram: histogram.map((count) => Number((count / histogramPixels.length).toFixed(6))), appearance: Array.from(appearance) };
 }
 
 async function getOpenCv() {
@@ -133,10 +135,11 @@ const descriptorHeader = Buffer.alloc(12);
 descriptorHeader.write("PCIX", 0, 4, "ascii");
 descriptorHeader.writeUInt32LE(INDEX_VERSION, 4);
 descriptorHeader.writeUInt32LE(descriptorRecords.length, 8);
-await writeFile(descriptorIndexPath, Buffer.concat([descriptorHeader, ...descriptorRecords]));
+const indexBytes = Buffer.concat([descriptorHeader, ...descriptorRecords]);
+await writeFile(descriptorIndexPath, indexBytes);
 await writeFile(outputPath, `${JSON.stringify({
   cards, collections, members, features,
-  descriptorIndex: { url: "/rescene-recognition-index.bin", version: INDEX_VERSION, descriptorSize: DESCRIPTOR_BYTES },
+  descriptorIndex: { url: `/rescene-recognition-index.bin?v=${createHash("sha256").update(indexBytes).digest("hex").slice(0, 12)}`, version: INDEX_VERSION, descriptorSize: DESCRIPTOR_BYTES },
 })}\n`, "utf8");
 process.stdout.write(`Generated ${cards.length} cards at ${path.relative(projectRoot, outputPath)}\n`);
 process.stdout.write(`Generated ${descriptorRecords.length} descriptor records at ${path.relative(projectRoot, descriptorIndexPath)}\n`);

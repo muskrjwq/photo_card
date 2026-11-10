@@ -123,7 +123,7 @@ function normalizeCard(cv: Cv, source: any) {
 
   // Low-quality photos can lose a continuous outer edge. In that case, isolate a
   // card-shaped foreground region whose colour differs from the four corners.
-  if (!bestPoints) {
+  {
     const foreground = new cv.Mat(resized.rows, resized.cols, cv.CV_8UC1);
     const rgba = resized.data as Uint8Array; const maskData = foreground.data as Uint8Array;
     const sampleAt = (x: number, y: number) => { const offset = (y * resized.cols + x) * 4; return [rgba[offset], rgba[offset + 1], rgba[offset + 2]]; };
@@ -167,11 +167,17 @@ function normalizeCard(cv: Cv, source: any) {
   return output;
 }
 
-function extractFeatures(cv: Cv, image: HTMLImageElement, normalizePerspective = true): FeatureSet {
+function extractFeatures(cv: Cv, image: HTMLImageElement, normalizePerspective = true, smooth = false): FeatureSet {
   const source = cv.imread(image); const normalized = new cv.Mat(); const gray = new cv.Mat();
   if (normalizePerspective) {
     const corrected = normalizeCard(cv, source); corrected.copyTo(normalized); corrected.delete();
   } else cv.resize(source, normalized, new cv.Size(400, 600), 0, 0, cv.INTER_AREA);
+  if (smooth) {
+    const small = new cv.Mat();
+    cv.resize(normalized, small, new cv.Size(150, 225), 0, 0, cv.INTER_AREA);
+    cv.resize(small, normalized, new cv.Size(400, 600), 0, 0, cv.INTER_CUBIC);
+    small.delete();
+  }
   cv.cvtColor(normalized, gray, cv.COLOR_RGBA2GRAY); cv.equalizeHist(gray, gray);
   const keypoints = new cv.KeyPointVector(); const descriptors = new cv.Mat(); const mask = new cv.Mat(600, 400, cv.CV_8UC1, new cv.Scalar(0));
   cv.rectangle(mask, new cv.Point(24, 36), new cv.Point(375, 563), new cv.Scalar(255), -1);
@@ -185,7 +191,10 @@ function extractFeatures(cv: Cv, image: HTMLImageElement, normalizePerspective =
   const histogram = Array(16).fill(0);
   for (const value of histogramMat.data as Uint8Array) histogram[Math.min(15, Math.floor(value / 16))] += 1;
   const total = histogramMat.data.length;
-  const coarse = { dHash: hash.toString(16).padStart(16, "0"), histogram: histogram.map((count) => count / total) };
+  const appearanceMat = new cv.Mat();
+  cv.resize(gray, appearanceMat, new cv.Size(16, 24), 0, 0, cv.INTER_AREA);
+  const coarse = { dHash: hash.toString(16).padStart(16, "0"), histogram: histogram.map((count) => count / total), appearance: Array.from(appearanceMat.data as Uint8Array) };
+  appearanceMat.delete();
   source.delete(); normalized.delete(); gray.delete(); mask.delete(); orb.delete(); hashMat.delete(); histogramMat.delete();
   return { keypoints, descriptors, coarse, cleanup: () => { keypoints.delete(); descriptors.delete(); } };
 }
@@ -197,9 +206,25 @@ function hammingHex(a: string, b: string) {
 }
 
 function coarseSimilarity(query: RecognitionIndexEntry, reference: RecognitionIndexEntry) {
+  if (query.appearance && reference.appearance) return appearanceSimilarity(query.appearance, reference.appearance);
   const hashScore = 1 - hammingHex(query.dHash, reference.dHash) / 64;
   const histogramScore = query.histogram.reduce((sum, value, index) => sum + Math.min(value, reference.histogram[index] ?? 0), 0);
-  return hashScore * 0.72 + histogramScore * 0.28;
+  // Exposure changes alter the histogram even when the card is identical.
+  return hashScore * 0.95 + histogramScore * 0.05;
+}
+
+// Normalized correlation ignores overall exposure; small offsets tolerate imperfect framing.
+function appearanceSimilarity(a: number[], b: number[]) {
+  let best = 0;
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    let sa = 0, sb = 0, aa = 0, bb = 0, ab = 0, n = 0;
+    for (let y = 2; y < 22; y++) for (let x = 2; x < 14; x++) {
+      const av = a[(y + dy) * 16 + x + dx], bv = b[y * 16 + x];
+      sa += av; sb += bv; aa += av * av; bb += bv * bv; ab += av * bv; n++;
+    }
+    best = Math.max(best, (ab - sa * sb / n) / Math.sqrt(Math.max(1, (aa - sa * sa / n) * (bb - sb * sb / n))));
+  }
+  return best;
 }
 
 function compareFeatures(cv: Cv, query: FeatureSet, stored: StoredFeatures) {
@@ -208,24 +233,44 @@ function compareFeatures(cv: Cv, query: FeatureSet, stored: StoredFeatures) {
   const matcher = new cv.BFMatcher(cv.NORM_HAMMING, false); const matches = new cv.DMatchVectorVector();
   matcher.knnMatch(query.descriptors, referenceDescriptors, matches, 2);
   const queryPoints: number[] = []; const referencePoints: number[] = []; let good = 0;
+  // Repeated print patterns must not count multiple times against one reference point.
+  const unique = new Map<number, { queryIdx: number; distance: number }>();
   for (let index = 0; index < matches.size(); index += 1) {
     const pair = matches.get(index);
     if (pair.size() >= 2) {
       const first = pair.get(0); const second = pair.get(1);
       if (first.distance < second.distance * 0.75) {
-        const queryPoint = query.keypoints.get(first.queryIdx).pt;
-        queryPoints.push(queryPoint.x, queryPoint.y); referencePoints.push(stored.points[first.trainIdx * 2], stored.points[first.trainIdx * 2 + 1]); good += 1;
+        if (!unique.has(first.trainIdx) || first.distance < unique.get(first.trainIdx)!.distance)
+          unique.set(first.trainIdx, { queryIdx: first.queryIdx, distance: first.distance });
       }
     }
     pair.delete();
+  }
+  for (const [trainIdx, match] of unique) {
+    const point = query.keypoints.get(match.queryIdx).pt;
+    queryPoints.push(point.x, point.y); referencePoints.push(stored.points[trainIdx * 2], stored.points[trainIdx * 2 + 1]); good += 1;
   }
   let inlierRatio = 0; let spatialCoverage = 0;
   if (good >= 8) {
     const src = cv.matFromArray(good, 1, cv.CV_32FC2, queryPoints); const dst = cv.matFromArray(good, 1, cv.CV_32FC2, referencePoints); const inlierMask = new cv.Mat();
     const homography = cv.findHomography(src, dst, cv.RANSAC, 4, inlierMask);
     const maskValues = Array.from(inlierMask.data as Uint8Array); const inliers = maskValues.reduce((sum: number, value: number) => sum + (value ? 1 : 0), 0);
-    inlierRatio = inliers / good; src.delete(); dst.delete(); inlierMask.delete(); homography.delete();
-    if (inliers >= 4) {
+    let plausible = false;
+    if (!homography.empty()) {
+      const corners = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, 399, 0, 399, 599, 0, 599]);
+      const projected = new cv.Mat(); cv.perspectiveTransform(corners, projected, homography);
+      const p = projected.data32F as Float32Array;
+      let area = 0; let convex = true;
+      for (let i = 0; i < 4; i++) {
+        const j = (i + 1) % 4, k = (i + 2) % 4;
+        area += p[i * 2] * p[j * 2 + 1] - p[j * 2] * p[i * 2 + 1];
+        convex &&= (p[j * 2] - p[i * 2]) * (p[k * 2 + 1] - p[j * 2 + 1]) - (p[j * 2 + 1] - p[i * 2 + 1]) * (p[k * 2] - p[j * 2]) > 0;
+      }
+      plausible = convex && area / 480000 > 0.15 && area / 480000 < 6 && Array.from(p).every(Number.isFinite);
+      corners.delete(); projected.delete();
+    }
+    inlierRatio = plausible ? inliers / good : 0; src.delete(); dst.delete(); inlierMask.delete(); homography.delete();
+    if (plausible && inliers >= 4) {
       const queryInliers: number[] = []; const referenceInliers: number[] = [];
       for (let index = 0; index < maskValues.length; index += 1) if (maskValues[index]) { queryInliers.push(queryPoints[index * 2], queryPoints[index * 2 + 1]); referenceInliers.push(referencePoints[index * 2], referencePoints[index * 2 + 1]); }
       const coverage = (points: number[]) => { const xs = points.filter((_, index) => index % 2 === 0); const ys = points.filter((_, index) => index % 2 === 1); return ((Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys))) / (400 * 600); };
@@ -233,30 +278,43 @@ function compareFeatures(cv: Cv, query: FeatureSet, stored: StoredFeatures) {
     }
   }
   matches.delete(); matcher.delete(); referenceDescriptors.delete();
-  const score = Math.min(1, good / 40) * 0.45 + inlierRatio * 0.4 + Math.min(1, spatialCoverage / 0.18) * 0.15;
+  const score = Math.min(1, good * inlierRatio / 30) * 0.55 + inlierRatio * 0.3 + Math.min(1, spatialCoverage / 0.18) * 0.15;
   return { score, good, inlierRatio, spatialCoverage };
 }
 
 export async function matchPhotoCard(file: File, cards: CatalogCard[], index: Record<string, RecognitionIndexEntry>, descriptorMeta: DescriptorIndexMeta, onProgress?: (done: number, total: number) => void): Promise<MatchResponse | null> {
   const [cv, storedIndex] = await Promise.all([getOpenCv(), loadDescriptorIndex(descriptorMeta)]); const objectUrl = URL.createObjectURL(file);
   try {
-    const queryImage = await loadImage(objectUrl); const query = extractFeatures(cv, queryImage); const possibleMatches: MatchResult[] = [];
+    const queryImage = await loadImage(objectUrl); const possibleMatches: MatchResult[] = [];
+    let completedComparisons = 0;
+    // Keep the full frame as well: contour detection can mistake clothing for the card edge.
+    for (const [normalizePerspective, smooth] of [[false, false], [true, false], [false, true], [true, true]]) {
+    if (smooth || normalizePerspective) {
+      const ranked = [...possibleMatches].sort((a, b) => b.rankingScore - a.rankingScore);
+      const runnerUp = ranked.find(item => item.card.id !== ranked[0]?.card.id);
+      if (ranked[0]?.rankingScore >= 0.8 && ranked[0].rankingScore - (runnerUp?.rankingScore ?? 0) >= 0.08) break;
+    }
+    const query = extractFeatures(cv, queryImage, normalizePerspective, smooth);
     const rankedCandidates = cards.map((card) => ({ card, score: index[card.id] ? coarseSimilarity(query.coarse, index[card.id]) : 0 })).sort((a, b) => b.score - a.score);
-    const shortlist = rankedCandidates.slice(0, 100).map((item) => item.card); const diagnosticResults: Array<{ id: string; score: number; good: number; inlierRatio: number; spatialCoverage: number }> = [];
+    const shortlist = rankedCandidates.slice(0, smooth ? 300 : 100).map((item) => item.card); const diagnosticResults: Array<{ id: string; score: number; good: number; inlierRatio: number; spatialCoverage: number }> = [];
     try {
       for (let candidateIndex = 0; candidateIndex < shortlist.length; candidateIndex += 1) {
         const reference = storedIndex.get(shortlist[candidateIndex].id); if (!reference) continue;
         const result = compareFeatures(cv, query, reference);
         diagnosticResults.push({ id: shortlist[candidateIndex].id, score: result.score, good: result.good, inlierRatio: result.inlierRatio, spatialCoverage: result.spatialCoverage });
-        const coarseScore = rankedCandidates[candidateIndex].score; const rankingScore = result.score * 0.7 + coarseScore * 0.3;
-        const eligible = result.good >= 10 && result.inlierRatio >= 0.28 && result.spatialCoverage >= 0.025 && result.score >= 0.35 && coarseScore >= 0.6;
+        const coarseScore = rankedCandidates[candidateIndex].score; const rankingScore = result.score * 0.5 + coarseScore * 0.5;
+        const minimumInliers = coarseScore >= 0.85 || result.inlierRatio >= 0.7 ? 6 : 8;
+        const eligible = result.good * result.inlierRatio >= minimumInliers && result.inlierRatio >= 0.35 && result.spatialCoverage >= 0.025 && result.score >= (coarseScore >= 0.85 ? 0.3 : 0.35);
         if (eligible) possibleMatches.push({ card: shortlist[candidateIndex], confidence: result.score, goodMatches: result.good, inlierRatio: result.inlierRatio, spatialCoverage: result.spatialCoverage, coarseScore, rankingScore });
-        onProgress?.(candidateIndex + 1, shortlist.length);
+        onProgress?.(++completedComparisons, 800);
         if (candidateIndex % 5 === 4) await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
       }
     } finally { query.cleanup(); }
-    if (new URLSearchParams(window.location.search).has("recognitionDebug")) console.info("RECOGNITION_DEBUG", JSON.stringify({ coarse: rankedCandidates.slice(0, 100).map((item, rank) => ({ id: item.card.id, rank: rank + 1, score: item.score })), verified: diagnosticResults.sort((a, b) => b.score - a.score) }));
-    const candidates = possibleMatches.sort((a, b) => b.rankingScore - a.rankingScore).slice(0, 4);
+    if (new URLSearchParams(window.location.search).has("recognitionDebug")) console.info("RECOGNITION_DEBUG", JSON.stringify({ coarse: rankedCandidates.map((item, rank) => ({ id: item.card.id, rank: rank + 1, score: item.score })), verified: diagnosticResults.sort((a, b) => b.score - a.score) }));
+    }
+    onProgress?.(800, 800);
+    const candidates = possibleMatches.sort((a, b) => b.rankingScore - a.rankingScore)
+      .filter((result, position, all) => all.findIndex(other => other.card.id === result.card.id) === position).slice(0, 4);
     if (!candidates.length) return null;
     const primary = candidates[0]; const margin = primary.rankingScore - (candidates[1]?.rankingScore ?? 0);
     const strongGeometry = primary.goodMatches >= 35 && primary.inlierRatio >= 0.5 && primary.spatialCoverage >= 0.06 && primary.confidence >= 0.65;

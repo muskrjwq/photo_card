@@ -4,6 +4,7 @@ import type { CatalogCard } from "./types";
 export interface RecognitionIndexEntry {
   dHash: string;
   histogram: number[];
+  appearance?: number[];
 }
 
 export const catalogCards = generatedCatalog.cards as unknown as CatalogCard[];
