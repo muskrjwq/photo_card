@@ -1,1 +1,1 @@
-{"url":"/rescene-xfeat-index.bin?v=7fa9083ec7dd","modelUrl":"/models/xfeat_512x512.onnx?v=1fd5874d8503","version":1,"descriptorSize":64,"globalSize":1024,"featuresPerCard":144,"cards":2220}
+{"url":"/rescene-xfeat-index.bin?v=2f92051dfb04","modelUrl":"/models/xfeat_512x512.onnx?v=1fd5874d8503","version":2,"idSize":12,"descriptorSize":64,"globalSize":1024,"featuresPerCard":144,"cards":2703}

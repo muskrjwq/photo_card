@@ -3,7 +3,7 @@
 import type { CatalogCard } from "./types";
 import { extractXFeat, XFEAT_DESCRIPTOR_SIZE, XFEAT_GLOBAL_SIZE, XFEAT_SIZE } from "./xfeat-core.mjs";
 
-type XFeatMeta = { url: string; modelUrl: string; version: number; descriptorSize: number; globalSize: number; featuresPerCard: number; cards: number };
+type XFeatMeta = { url: string; modelUrl: string; version: number; idSize?: number; descriptorSize: number; globalSize: number; featuresPerCard: number; cards: number };
 type StoredFeatures = { points: Uint16Array; descriptors: Int8Array; global: Int8Array; count: number };
 type QueryFeatures = { points: Uint16Array; descriptors: Float32Array; global: Float32Array; count: number };
 
@@ -44,11 +44,11 @@ function loadIndex(meta: XFeatMeta) {
     if (!response.ok) throw new Error(`XFeat index download failed: ${response.status}`);
     const buffer = await response.arrayBuffer(); const view = new DataView(buffer); const bytes = new Uint8Array(buffer);
     const magic = new TextDecoder("ascii").decode(bytes.slice(0, 4));
-    const version = view.getUint32(4, true); const total = view.getUint32(8, true); const descriptorSize = view.getUint16(12, true); const globalSize = view.getUint16(16, true);
+    const version = view.getUint32(4, true); const total = view.getUint32(8, true); const descriptorSize = view.getUint16(12, true); const globalSize = view.getUint16(16, true); const idSize = view.getUint16(18, true) || 8;
     if (magic !== "XFIX" || version !== meta.version || descriptorSize !== XFEAT_DESCRIPTOR_SIZE || globalSize !== XFEAT_GLOBAL_SIZE) throw new Error("XFeat index format mismatch");
     const decoder = new TextDecoder("ascii"); const records = new Map<string, StoredFeatures>(); let offset = 20;
     for (let record = 0; record < total; record += 1) {
-      const id = decoder.decode(bytes.slice(offset, offset + 8)); const count = view.getUint16(offset + 8, true); offset += 12;
+      const id = decoder.decode(bytes.slice(offset, offset + idSize)).replace(/\0+$/, ""); const count = view.getUint16(offset + idSize, true); offset += idSize + 4;
       const global = new Int8Array(buffer, offset, globalSize); offset += globalSize;
       const points = new Uint16Array(count * 2); const descriptors = new Int8Array(count * descriptorSize);
       for (let feature = 0; feature < count; feature += 1) {

@@ -2,7 +2,7 @@ import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const projectRoot = process.cwd();
-const csvPath = path.join(projectRoot, "data", "rescene", "rescene_photocards.csv");
+const dataDirectory = path.join(projectRoot, "data", "rescene");
 const imageDirectory = path.join(projectRoot, "public", "rescene_poca");
 const outputPath = path.join(projectRoot, "modules", "catalog", "rescene-catalog.generated.json");
 
@@ -24,18 +24,24 @@ function parseCsv(text) {
   return rows.map((cells) => Object.fromEntries(headers.map((header, index) => [header, cells[index] ?? ""])));
 }
 
-const csvText = await readFile(csvPath, "utf8");
-const rows = parseCsv(csvText);
-const imageNames = await readdir(imageDirectory);
-const imageById = new Map(imageNames.map((name) => [path.parse(name).name, name]));
+const csvNames = (await readdir(dataDirectory)).filter((name) => name.toLowerCase().endsWith("photocards.csv")).sort();
+const rows = (await Promise.all(csvNames.map(async (name) => parseCsv(await readFile(path.join(dataDirectory, name), "utf8"))))).flat();
+const imageNames = (await readdir(imageDirectory, { recursive: true })).filter((name) => /\.(png|jpe?g|webp)$/i.test(name));
+const imageById = new Map();
+for (const name of imageNames) {
+  const id = path.parse(name).name;
+  if (imageById.has(id)) throw new Error(`Duplicate image ID: ${id}`);
+  imageById.set(id, name.split(path.sep).join("/"));
+}
 const duplicateIds = rows.filter((row, index) => rows.findIndex((candidate) => candidate.cardId === row.cardId) !== index);
 if (duplicateIds.length) throw new Error(`Duplicate cardId: ${duplicateIds[0].cardId}`);
 
 const albumCategories = new Set(["Re:Scene", "Glow Up", "Scenedrome", "Dearest"]);
 const cards = [];
+const missingImages = [];
 for (let index = 0; index < rows.length; index += 1) {
   const row = rows[index]; const imageName = imageById.get(row.cardId);
-  if (!imageName) throw new Error(`Missing image for ${row.cardId}`);
+  if (!imageName) { missingImages.push(row.cardId); continue; }
   const expectedPath = `/rescene_poca/${imageName}`;
   cards.push({
     id: row.cardId,
@@ -44,7 +50,7 @@ for (let index = 0; index < rows.length; index += 1) {
     kind: "member",
     name: row.name,
     collection: row.category,
-    category: albumCategories.has(row.category) ? "album" : "event",
+    category: albumCategories.has(row.category) || /album photocards/i.test(row.category) ? "album" : "event",
     source: `${row.memberName} #${row.idNumber}`,
     image: expectedPath,
     owners: 0,
@@ -54,9 +60,11 @@ for (let index = 0; index < rows.length; index += 1) {
   });
 }
 
+if (missingImages.length) process.stderr.write(`Skipped ${missingImages.length} cards without images: ${missingImages.join(", ")}\n`);
+
 const collections = [...new Set(cards.map((card) => card.collection))];
 const members = [...new Set(cards.map((card) => card.member))];
 await writeFile(outputPath, `${JSON.stringify({
   cards, collections, members,
 })}\n`, "utf8");
-process.stdout.write(`Generated ${cards.length} cards at ${path.relative(projectRoot, outputPath)}\n`);
+process.stdout.write(`Generated ${cards.length} cards from ${csvNames.length} CSV files at ${path.relative(projectRoot, outputPath)}\n`);
