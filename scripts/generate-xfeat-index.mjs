@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile, readdir, writeFile } from 'node:fs/promises';
+import { readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
 import * as ort from 'onnxruntime-web';
@@ -8,11 +8,12 @@ import { extractXFeat, quantizeDescriptor, XFEAT_DESCRIPTOR_SIZE, XFEAT_GLOBAL_S
 const root = process.cwd();
 const imageDirectory = path.join(root, 'public', 'rescene_poca');
 const modelPath = path.join(root, 'public', 'models', 'xfeat_512x512.onnx');
-const outputPath = path.join(root, 'public', 'rescene-xfeat-index.bin');
+const publicDirectory = path.join(root, 'public');
 const manifestPath = path.join(root, 'modules', 'catalog', 'xfeat-index.generated.json');
 const FEATURES_PER_CARD = 144;
 const VERSION = 2;
 const ID_SIZE = 12;
+const MAX_SHARD_BYTES = 20 * 1024 * 1024;
 
 ort.env.wasm.numThreads = Math.max(1, Math.min(4, Number(process.env.XFEAT_THREADS || 2)));
 const modelBytes = await readFile(modelPath);
@@ -42,13 +43,22 @@ for (let index = 0; index < imageNames.length; index += 1) {
   if ((index + 1) % 50 === 0 || index + 1 === imageNames.length) process.stdout.write(`XFeat ${index + 1}/${imageNames.length}\n`);
 }
 
-const header = Buffer.alloc(20);
-header.write('XFIX', 0, 4, 'ascii'); header.writeUInt32LE(VERSION, 4); header.writeUInt32LE(records.length, 8);
-header.writeUInt16LE(XFEAT_DESCRIPTOR_SIZE, 12); header.writeUInt16LE(FEATURES_PER_CARD, 14); header.writeUInt16LE(XFEAT_GLOBAL_SIZE, 16);
-header.writeUInt16LE(ID_SIZE, 18);
-const indexBytes = Buffer.concat([header, ...records]);
-await writeFile(outputPath, indexBytes);
-const hash = createHash('sha256').update(indexBytes).digest('hex').slice(0, 12);
+const shards = []; let current = []; let currentBytes = 20;
+for (const record of records) {
+  if (current.length && currentBytes + record.length > MAX_SHARD_BYTES) { shards.push(current); current = []; currentBytes = 20; }
+  current.push(record); currentBytes += record.length;
+}
+if (current.length) shards.push(current);
+for (const name of await readdir(publicDirectory)) if (/^rescene-xfeat-index(?:-\d+)?\.bin$/.test(name)) await unlink(path.join(publicDirectory, name));
+const urls = [];
+for (let index = 0; index < shards.length; index += 1) {
+  const header = Buffer.alloc(20);
+  header.write('XFIX', 0, 4, 'ascii'); header.writeUInt32LE(VERSION, 4); header.writeUInt32LE(shards[index].length, 8);
+  header.writeUInt16LE(XFEAT_DESCRIPTOR_SIZE, 12); header.writeUInt16LE(FEATURES_PER_CARD, 14); header.writeUInt16LE(XFEAT_GLOBAL_SIZE, 16); header.writeUInt16LE(ID_SIZE, 18);
+  const indexBytes = Buffer.concat([header, ...shards[index]]); const name = `rescene-xfeat-index-${index + 1}.bin`;
+  await writeFile(path.join(publicDirectory, name), indexBytes);
+  const hash = createHash('sha256').update(indexBytes).digest('hex').slice(0, 12); urls.push(`/${name}?v=${hash}`);
+}
 const modelHash = createHash('sha256').update(modelBytes).digest('hex').slice(0, 12);
-await writeFile(manifestPath, `${JSON.stringify({ url: `/rescene-xfeat-index.bin?v=${hash}`, modelUrl: `/models/xfeat_512x512.onnx?v=${modelHash}`, version: VERSION, idSize: ID_SIZE, descriptorSize: XFEAT_DESCRIPTOR_SIZE, globalSize: XFEAT_GLOBAL_SIZE, featuresPerCard: FEATURES_PER_CARD, cards: records.length })}\n`);
-process.stdout.write(`Generated ${records.length} XFeat records (${Math.round(indexBytes.length / 1024 / 1024)} MiB).\n`);
+await writeFile(manifestPath, `${JSON.stringify({ urls, modelUrl: `/models/xfeat_512x512.onnx?v=${modelHash}`, version: VERSION, idSize: ID_SIZE, descriptorSize: XFEAT_DESCRIPTOR_SIZE, globalSize: XFEAT_GLOBAL_SIZE, featuresPerCard: FEATURES_PER_CARD, cards: records.length })}\n`);
+process.stdout.write(`Generated ${records.length} XFeat records in ${shards.length} shards.\n`);

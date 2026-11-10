@@ -3,7 +3,7 @@
 import type { CatalogCard } from "./types";
 import { extractXFeat, XFEAT_DESCRIPTOR_SIZE, XFEAT_GLOBAL_SIZE, XFEAT_SIZE } from "./xfeat-core.mjs";
 
-type XFeatMeta = { url: string; modelUrl: string; version: number; idSize?: number; descriptorSize: number; globalSize: number; featuresPerCard: number; cards: number };
+type XFeatMeta = { url?: string; urls?: string[]; modelUrl: string; version: number; idSize?: number; descriptorSize: number; globalSize: number; featuresPerCard: number; cards: number };
 type StoredFeatures = { points: Uint16Array; descriptors: Int8Array; global: Int8Array; count: number };
 type QueryFeatures = { points: Uint16Array; descriptors: Float32Array; global: Float32Array; count: number };
 
@@ -38,9 +38,10 @@ async function getSession(meta: XFeatMeta) {
 }
 
 function loadIndex(meta: XFeatMeta) {
-  let pending = indexCache.get(meta.url);
+  const urls = meta.urls ?? (meta.url ? [meta.url] : []); const cacheKey = urls.join("|");
+  let pending = indexCache.get(cacheKey);
   if (pending) return pending;
-  pending = fetch(meta.url, { cache: "force-cache" }).then(async (response) => {
+  pending = Promise.all(urls.map((url) => fetch(url, { cache: "force-cache" }).then(async (response) => {
     if (!response.ok) throw new Error(`XFeat index download failed: ${response.status}`);
     const buffer = await response.arrayBuffer(); const view = new DataView(buffer); const bytes = new Uint8Array(buffer);
     const magic = new TextDecoder("ascii").decode(bytes.slice(0, 4));
@@ -59,8 +60,8 @@ function loadIndex(meta: XFeatMeta) {
     }
     if (offset !== buffer.byteLength) throw new Error("XFeat index is corrupt");
     return records;
-  });
-  indexCache.set(meta.url, pending); return pending;
+  }))).then((shards) => { const records = new Map<string, StoredFeatures>(); for (const shard of shards) for (const [id, features] of shard) records.set(id, features); return records; });
+  indexCache.set(cacheKey, pending); return pending;
 }
 
 async function fileToTensor(file: File) {
