@@ -45,7 +45,7 @@ const collectionOrder = [
   "Re:Scene", "Scenedrome", "Glow Up", "Dearest", "Lip Bomb", "Pulse",
   "merch", "fanclub", "KCON Japan", "misc", "fancon - Project 326",
   "Casa Verdi", "Dominos", "Pretty Girl", "Epais", "HOLLYS",
-  "CU 덕덕이 딸 도시락", "펄스 럭키드로우", "CU 405빵 콜라보 시즌1", "CU 405빵 콜라보 시즌2",
+  "CU 덕연이 딸 도시락", "펄스 럭키드로우", "CU 405빵 콜라보 시즌1", "CU 405빵 콜라보 시즌2",
   "MLB 콜라보", "더현대 팝업 스토어", "와키윌리 콜라보", "한스킨 콜라보",
   "할리스 콜라보", "에이페 콜라보", "나랑드 콜라보", "도미노 콜라보", "카사베르디 콜라보",
 ];
