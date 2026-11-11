@@ -40,13 +40,29 @@ const albumCategories = new Set(["Re:Scene", "Scenedrome", "Glow Up", "Dearest",
 const collectionAliases = new Map([
   ["Lip Bomb - album photocards", "Lip Bomb"],
   ["Lip Bomb - benefits", "Lip Bomb"],
+  ["펄스 럭키드로우", "Pulse"],
+  ["fanclub", "팬클럽"],
+  ["merch", "응원봉"],
+  ["fancon - Project 326", "팬콘"],
+  ["KCON Japan", "KCON-Japan"],
+  ["Casa Verdi", "카사베르디"],
+  ["나랑드 콜라보", "나랑드"],
+  ["Dominos", "도미노스"],
+  ["한스킨 콜라보", "한스킨"],
+  ["Epais", "에이페"],
+  ["HOLLYS", "할리스커피"],
+  ["CU 405빵 콜라보 시즌1", "CU리센느빵 시즌1"],
+  ["CU 405빵 콜라보 시즌2", "CU리센느빵 시즌2"],
+  ["와키윌리 콜라보", "와키윌리"],
+  ["MLB 콜라보", "MLB"],
+  ["misc", "기타"],
 ]);
 const collectionOrder = [
   "Re:Scene", "Scenedrome", "Glow Up", "Dearest", "Lip Bomb", "Pulse",
-  "merch", "fanclub", "KCON Japan", "misc", "fancon - Project 326",
-  "Casa Verdi", "Dominos", "Pretty Girl", "Epais", "HOLLYS",
-  "CU 덕연이 딸 도시락", "펄스 럭키드로우", "CU 405빵 콜라보 시즌1", "CU 405빵 콜라보 시즌2",
-  "MLB 콜라보", "더현대 팝업 스토어", "와키윌리 콜라보", "한스킨 콜라보", "나랑드 콜라보",
+  "팬클럽", "응원봉", "팬콘", "KCON-Japan", "Pretty Girl", "카사베르디",
+  "나랑드", "도미노스", "한스킨", "에이페", "할리스커피",
+  "CU리센느빵 시즌1", "CU리센느빵 시즌2", "와키윌리", "MLB",
+  "CU 덕연이 딸 도시락", "더현대 팝업 스토어", "기타",
 ];
 const collectionRank = new Map(collectionOrder.map((collection, index) => [collection, index]));
 const cards = [];
