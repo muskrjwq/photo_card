@@ -20,6 +20,23 @@ npm run dev
 
 Node.js 22.13 이상이 필요합니다. 배포 빌드는 `npm run build`로 만듭니다.
 
+## Google 로그인과 사용자 데이터
+
+계정은 Supabase Auth의 Google 로그인을 사용하고, 소장 포카는 `user_cards` 테이블에 저장합니다. 브라우저에는 공개 가능한 publishable/anon key만 제공하며, 각 사용자는 RLS 정책상 자신의 행만 읽고 추가·삭제할 수 있습니다.
+
+1. Supabase 대시보드에서 Google provider를 활성화합니다.
+2. SQL Editor에서 `supabase/migrations/202611110001_user_cards.sql`을 실행합니다.
+3. `.env.example`을 참고해 로컬 환경변수를 설정합니다.
+4. Auth URL Configuration의 Site URL을 운영 주소로 설정하고 `http://localhost:3000/**` 등 개발용 Redirect URL을 추가합니다.
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_PUBLISHABLE_OR_ANON_KEY
+ADMIN_EMAIL=YOUR_GOOGLE_ACCOUNT_EMAIL
+```
+
+`ADMIN_EMAIL`은 서버 전용 값입니다. 로그인 토큰을 서버에서 검증한 뒤 해당 Google 계정에만 관리자 UI를 노출하며, 향후 관리자 API도 같은 검사를 거쳐야 합니다. Supabase secret/service-role key는 브라우저 코드나 저장소에 넣지 마세요.
+
 ## 프로젝트 구조
 
 ```text
