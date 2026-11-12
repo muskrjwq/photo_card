@@ -12,6 +12,7 @@ import { getCatalogChronology } from "@/modules/catalog/chronology";
 import { matchPhotoCard, type MatchResponse } from "@/modules/catalog/xfeat-matcher";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import LocalCardEditor from "@/components/local-card-editor";
+import ProfileSetup, { type UserProfile } from "@/components/profile-setup";
 
 type View = "catalog" | "recognize" | "collection" | "settings";
 type AuthUser = { id: string; email: string | null; name: string; avatarUrl: string | null };
@@ -156,7 +157,7 @@ function CollectionView({ owned, toggleOwned, globalBlur, user, onSignIn }: { ow
   if (!user) return <section className="collection-page auth-required"><div className="auth-card"><span className="brand-mark"><span>p</span></span><h1>나의 포카를 저장해 보세요</h1><p>Google 계정으로 로그인하면 어느 기기에서든 내 포카 앨범을 이어서 볼 수 있어요.</p><button className="google-login-button large" onClick={onSignIn}><LogIn size={18} /> Google로 로그인</button></div></section>;
   const ownedCards = catalogCards.filter((card) => owned.includes(card.id)); const total = catalogCards.length; const percent = Math.round((owned.length / total) * 100);
   const initial = (user.name || user.email || "P").trim().charAt(0).toLocaleUpperCase();
-  return <section className="collection-page"><div className="album-header"><div className="profile-avatar">{initial}<span>✦</span></div><div><span className="eyebrow"><span /> MY POCKET</span><h1>{user.name}의 포카 앨범</h1><p>좋아하는 순간을 한 장씩 모으는 중 · 공개 앨범</p></div><button className="secondary-button"><Share2 size={16} /> 공유하기</button></div>
+  return <section className="collection-page"><div className="album-header"><div className="profile-avatar">{user.avatarUrl ? <Image src={user.avatarUrl} alt={`${user.name} 프로필 사진`} fill unoptimized sizes="68px" /> : initial}<span>✦</span></div><div><span className="eyebrow"><span /> MY POCKET</span><h1>{user.name}의 포카 앨범</h1><p>좋아하는 순간을 한 장씩 모으는 중 · 공개 앨범</p></div><button className="secondary-button"><Share2 size={16} /> 공유하기</button></div>
     <div className="collection-stats"><div><strong>{owned.length}</strong><span>보유 포카</span></div><div><strong>{percent}%</strong><span>수집률</span></div><div className="completion"><span>전체 {total}장 중 {owned.length}장</span><div><i style={{ width: `${percent}%` }} /></div></div></div>
     <div className="binder"><div className="binder-rings">{[1,2,3,4,5].map((n) => <i key={n} />)}</div><div className="binder-top"><div><span className="section-kicker">MY COLLECTION</span><h2>SCENEDROME</h2></div><span>{ownedCards.length} / {total}</span></div><div className="binder-grid">{Array.from({ length: 8 }).map((_, index) => { const card = ownedCards[index]; return card ? <div className="binder-slot filled" key={card.id}><CardArtwork card={card} blurred={globalBlur} /><button onClick={() => toggleOwned(card.id)}><X size={13} /></button></div> : <div className="binder-slot" key={index}><Plus size={21} /><span>비어 있음</span></div>; })}</div><span className="page-number">— 01 —</span></div>
   </section>;
@@ -173,7 +174,7 @@ function SettingsView({ globalBlur, setGlobalBlur }: { globalBlur: boolean; setG
 }
 
 export default function PocaPocketApp() {
-  const [view, setView] = useState<View>("catalog"); const [owned, setOwned] = useState<string[]>([]); const [ownerCounts, setOwnerCounts] = useState<Record<string, number>>({}); const [globalBlur, setGlobalBlur] = useState(false); const [mobileOpen, setMobileOpen] = useState(false); const [toast, setToast] = useState(""); const [authUser, setAuthUser] = useState<AuthUser | null>(null); const [isAdmin, setIsAdmin] = useState(false); const [authReady, setAuthReady] = useState(false);
+  const [view, setView] = useState<View>("catalog"); const [owned, setOwned] = useState<string[]>([]); const [ownerCounts, setOwnerCounts] = useState<Record<string, number>>({}); const [globalBlur, setGlobalBlur] = useState(false); const [mobileOpen, setMobileOpen] = useState(false); const [toast, setToast] = useState(""); const [authUser, setAuthUser] = useState<AuthUser | null>(null); const [profile, setProfile] = useState<UserProfile | null>(null); const [profileFeatureReady, setProfileFeatureReady] = useState(false); const [isAdmin, setIsAdmin] = useState(false); const [authReady, setAuthReady] = useState(false);
   const localAdminAccess = process.env.NODE_ENV === "development" && isAdmin;
   const showToast = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 2400); };
 
@@ -182,12 +183,22 @@ export default function PocaPocketApp() {
     if (!supabase) { setAuthReady(true); return; }
     let active = true;
     const applySession = async (accessToken?: string) => {
-      if (!accessToken) { if (active) { setAuthUser(null); setIsAdmin(false); setOwned([]); setAuthReady(true); } return; }
+      if (!accessToken) { if (active) { setAuthUser(null); setProfile(null); setProfileFeatureReady(false); setIsAdmin(false); setOwned([]); setAuthReady(true); } return; }
       const identityResponse = await fetch("/api/auth/identity", { headers: { Authorization: `Bearer ${accessToken}` } });
       if (!identityResponse.ok) { if (active) setAuthReady(true); return; }
       const identity = await identityResponse.json() as { user: AuthUser; isAdmin: boolean };
-      const { data } = await supabase.from("user_cards").select("card_id");
-      if (active) { setAuthUser(identity.user); setIsAdmin(identity.isAdmin); setOwned((data ?? []).map((row) => row.card_id)); setAuthReady(true); }
+      const [{ data }, profileResult] = await Promise.all([
+        supabase.from("user_cards").select("card_id"),
+        supabase.from("profiles").select("nickname, avatar_path").eq("id", identity.user.id).maybeSingle(),
+      ]);
+      let loadedProfile: UserProfile | null = null;
+      let loadedUser = identity.user;
+      if (profileResult.data) {
+        const { data: publicAvatar } = supabase.storage.from("avatars").getPublicUrl(profileResult.data.avatar_path);
+        loadedProfile = { nickname: profileResult.data.nickname, avatarPath: profileResult.data.avatar_path, avatarUrl: publicAvatar.publicUrl };
+        loadedUser = { ...identity.user, name: loadedProfile.nickname, avatarUrl: loadedProfile.avatarUrl };
+      }
+      if (active) { setAuthUser(loadedUser); setProfile(loadedProfile); setProfileFeatureReady(!profileResult.error); setIsAdmin(identity.isAdmin); setOwned((data ?? []).map((row) => row.card_id)); setAuthReady(true); }
     };
     void supabase.auth.getSession().then(({ data }) => applySession(data.session?.access_token));
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -216,7 +227,7 @@ export default function PocaPocketApp() {
     const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin } });
     if (error) showToast("Google 로그인을 시작하지 못했어요");
   };
-  const signOut = async () => { await getSupabaseBrowserClient()?.auth.signOut(); setView("catalog"); };
+  const signOut = async () => { await getSupabaseBrowserClient()?.auth.signOut(); setProfile(null); setProfileFeatureReady(false); setView("catalog"); };
   const toggleOwned = async (id: string) => {
     const supabase = getSupabaseBrowserClient();
     if (!authUser || !supabase) { await signIn(); return; }
@@ -230,9 +241,10 @@ export default function PocaPocketApp() {
   };
   const addOwned = async (id: string) => { if (!owned.includes(id)) await toggleOwned(id); if (authUser) showToast("나의 포카에 추가했어요"); };
   const navigate = (next: View) => { if (next === "settings" && !localAdminAccess) return; setView(next); setMobileOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const completeProfile = (nextProfile: UserProfile) => { setProfile(nextProfile); setAuthUser((current) => current ? { ...current, name: nextProfile.nickname, avatarUrl: nextProfile.avatarUrl } : current); };
   const initial = (authUser?.name || authUser?.email || "P").trim().charAt(0).toLocaleUpperCase();
-  return <main><header className="site-header"><button className="mobile-menu" onClick={() => setMobileOpen(!mobileOpen)}>{mobileOpen ? <X /> : <Menu />}</button><button className="logo-button" onClick={() => navigate("catalog")}><Logo /></button><nav className={mobileOpen ? "open" : ""}>{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)}><item.icon size={17} /> {item.label}</button>)}</nav><div className="header-actions"><button className="icon-button"><Heart size={18} /></button>{authUser ? <><button className="profile-button" title={authUser.email ?? authUser.name} onClick={() => navigate("collection")}>{initial}</button><button className="icon-button" aria-label="로그아웃" title="로그아웃" onClick={signOut}><LogOut size={17} /></button></> : <button className="google-login-button" disabled={!authReady} onClick={signIn}><LogIn size={16} /> Google 로그인</button>}{localAdminAccess && <button className="icon-button desktop-settings" aria-label="관리자 설정" onClick={() => navigate("settings")}><Settings2 size={18} /></button>}</div></header>
+  return <main><header className="site-header"><button className="mobile-menu" onClick={() => setMobileOpen(!mobileOpen)}>{mobileOpen ? <X /> : <Menu />}</button><button className="logo-button" onClick={() => navigate("catalog")}><Logo /></button><nav className={mobileOpen ? "open" : ""}>{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)}><item.icon size={17} /> {item.label}</button>)}</nav><div className="header-actions"><button className="icon-button"><Heart size={18} /></button>{authUser ? <><button className="profile-button" title={authUser.email ?? authUser.name} onClick={() => navigate("collection")}>{authUser.avatarUrl ? <Image src={authUser.avatarUrl} alt="프로필 사진" fill unoptimized sizes="36px" /> : initial}</button><button className="icon-button" aria-label="로그아웃" title="로그아웃" onClick={signOut}><LogOut size={17} /></button></> : <button className="google-login-button" disabled={!authReady} onClick={signIn}><LogIn size={16} /> Google 로그인</button>}{localAdminAccess && <button className="icon-button desktop-settings" aria-label="관리자 설정" onClick={() => navigate("settings")}><Settings2 size={18} /></button>}</div></header>
     {view === "catalog" && <CatalogView owned={owned} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} setView={navigate} localAdminAccess={localAdminAccess} />}{view === "recognize" && <RecognizeView addOwned={addOwned} />}{view === "collection" && <CollectionView owned={owned} toggleOwned={toggleOwned} globalBlur={globalBlur} user={authUser} onSignIn={signIn} />}{view === "settings" && localAdminAccess && <SettingsView globalBlur={globalBlur} setGlobalBlur={setGlobalBlur} />}
-    <footer><Logo /><p>팬이 만들고, 팬이 함께 채우는 오픈 포토카드 아카이브.</p><small>자료 출처: 리센느 음원총공팀 포카사전 · 이벤트 포카 Scene Simulation · Lip Bomb 앨범 포카 @bemyzena_ · Pulse 포카 MaxKim. 인식: XFeat (Apache-2.0). RESCENE 및 포토카드 권리는 각 권리자에게 있습니다.</small></footer>{toast && <div className="toast"><Check size={16} /> {toast}</div>}
+    <footer><Logo /><p>팬이 만들고, 팬이 함께 채우는 오픈 포토카드 아카이브.</p><small>자료 출처: 리센느 음원총공팀 포카사전 · 이벤트 포카 Scene Simulation · Lip Bomb 앨범 포카 @bemyzena_ · Pulse 포카 MaxKim. 인식: XFeat (Apache-2.0). RESCENE 및 포토카드 권리는 각 권리자에게 있습니다.</small></footer>{authUser && profileFeatureReady && !profile && <ProfileSetup userId={authUser.id} suggestedNickname={authUser.name} onComplete={completeProfile} onSignOut={signOut} />}{toast && <div className="toast"><Check size={16} /> {toast}</div>}
   </main>;
 }

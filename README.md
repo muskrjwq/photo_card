@@ -25,7 +25,7 @@ Node.js 22.13 이상이 필요합니다. 배포 빌드는 `npm run build`로 만
 계정은 Supabase Auth의 Google 로그인을 사용하고, 소장 포카는 `user_cards` 테이블에 저장합니다. 브라우저에는 공개 가능한 publishable/anon key만 제공하며, 각 사용자는 RLS 정책상 자신의 행만 읽고 추가·삭제할 수 있습니다.
 
 1. Supabase 대시보드에서 Google provider를 활성화합니다.
-2. SQL Editor에서 `supabase/migrations/202611110001_user_cards.sql`을 실행합니다.
+2. SQL Editor에서 `supabase/migrations`의 SQL 파일을 이름순으로 실행합니다. `202611120002_user_profiles.sql`은 프로필 테이블과 프사 Storage 버킷·RLS 정책을 만듭니다.
 3. `.env.example`을 참고해 로컬 환경변수를 설정합니다.
 4. Auth URL Configuration의 Site URL을 운영 주소로 설정하고 `http://localhost:3000/**` 등 개발용 Redirect URL을 추가합니다.
 
