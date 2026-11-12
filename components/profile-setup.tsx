@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Check, ImagePlus, LoaderCircle } from "lucide-react";
+import { Camera, Check, ImagePlus, LoaderCircle, X } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
@@ -17,9 +17,10 @@ export type UserProfile = {
 
 type ProfileSetupProps = {
   userId: string;
-  suggestedNickname: string;
+  currentProfile?: UserProfile | null;
   onComplete: (profile: UserProfile) => void;
   onSignOut: () => void;
+  onCancel?: () => void;
 };
 
 function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
@@ -60,8 +61,9 @@ async function createAvatar(file: File, zoom: number, positionX: number, positio
   }
 }
 
-export default function ProfileSetup({ userId, suggestedNickname, onComplete, onSignOut }: ProfileSetupProps) {
-  const [nickname, setNickname] = useState(suggestedNickname.trim().slice(0, 20));
+export default function ProfileSetup({ userId, currentProfile, onComplete, onSignOut, onCancel }: ProfileSetupProps) {
+  const editing = Boolean(currentProfile);
+  const [nickname, setNickname] = useState(currentProfile?.nickname ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -85,20 +87,28 @@ export default function ProfileSetup({ userId, suggestedNickname, onComplete, on
     event.preventDefault();
     const cleanNickname = nickname.trim();
     if (cleanNickname.length < 2 || cleanNickname.length > 20) { setError("닉네임은 2~20자로 입력해 주세요."); return; }
-    if (!file) { setError("프로필 사진을 선택해 주세요."); return; }
+    if (!file && !currentProfile) { setError("프로필 사진을 선택해 주세요."); return; }
     const supabase = getSupabaseBrowserClient();
     if (!supabase) { setError("Supabase 연결 설정이 필요합니다."); return; }
     setSaving(true); setError("");
     try {
-      const avatar = await createAvatar(file, zoom, positionX, positionY);
-      const avatarPath = `${userId}/avatar-${Date.now()}.webp`;
-      const { error: uploadError } = await supabase.storage.from("avatars").upload(avatarPath, avatar, { contentType: "image/webp", cacheControl: "31536000", upsert: false });
-      if (uploadError) throw uploadError;
+      let avatarPath = currentProfile?.avatarPath ?? "";
+      let uploadedPath: string | null = null;
+      if (file) {
+        const avatar = await createAvatar(file, zoom, positionX, positionY);
+        avatarPath = `${userId}/avatar-${Date.now()}.webp`;
+        const { error: uploadError } = await supabase.storage.from("avatars").upload(avatarPath, avatar, { contentType: "image/webp", cacheControl: "31536000", upsert: false });
+        if (uploadError) throw uploadError;
+        uploadedPath = avatarPath;
+      }
       const { error: profileError } = await supabase.from("profiles").upsert({ id: userId, nickname: cleanNickname, avatar_path: avatarPath, updated_at: new Date().toISOString() });
       if (profileError) {
-        await supabase.storage.from("avatars").remove([avatarPath]);
+        if (uploadedPath) await supabase.storage.from("avatars").remove([uploadedPath]);
         if (profileError.code === "23505") throw new Error("이미 사용 중인 닉네임입니다.");
         throw profileError;
+      }
+      if (uploadedPath && currentProfile?.avatarPath && currentProfile.avatarPath !== uploadedPath) {
+        await supabase.storage.from("avatars").remove([currentProfile.avatarPath]);
       }
       const { data } = supabase.storage.from("avatars").getPublicUrl(avatarPath);
       onComplete({ nickname: cleanNickname, avatarPath, avatarUrl: data.publicUrl });
@@ -108,6 +118,7 @@ export default function ProfileSetup({ userId, suggestedNickname, onComplete, on
     }
   };
 
-  return <div className="profile-setup-backdrop"><form className="profile-setup" onSubmit={submit}><div className="profile-setup-copy"><span className="eyebrow"><span /> WELCOME TO POCA POCKET</span><h2>포카포켓에 오신 걸 환영해요</h2><p>다른 팬들에게 보여질 닉네임과 프로필 사진을 설정해 주세요.</p></div><div className="profile-setup-body"><div className="avatar-editor"><label className={`avatar-crop ${previewUrl ? "has-image" : ""}`}>{previewUrl ? <><Image src={previewUrl} alt="프로필 사진 미리보기" fill unoptimized sizes="220px" style={{ objectPosition: `${positionX}% ${positionY}%`, transform: `scale(${zoom})` }} /><span className="avatar-guide" /></> : <><ImagePlus size={30} /><b>프사 선택</b><small>JPG · PNG · WEBP</small></>}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => chooseFile(event.target.files?.[0])} /></label>{previewUrl && <div className="avatar-controls"><label><span>확대</span><input type="range" min="1" max="3" step=".05" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label><label><span>좌우 위치</span><input type="range" min="0" max="100" value={positionX} onChange={(event) => setPositionX(Number(event.target.value))} /></label><label><span>상하 위치</span><input type="range" min="0" max="100" value={positionY} onChange={(event) => setPositionY(Number(event.target.value))} /></label></div>}</div><div className="profile-fields"><label><span>닉네임</span><input value={nickname} maxLength={20} onChange={(event) => setNickname(event.target.value)} placeholder="2~20자 닉네임" autoFocus /><small>{nickname.trim().length}/20 · 다른 사용자와 중복할 수 없어요.</small></label><div className="avatar-spec"><Camera size={16} /><span><b>자동 이미지 최적화</b>256×256 WebP · 목표 30~60KB · 최종 최대 100KB</span></div>{error && <p className="profile-error">{error}</p>}<button className="primary-button profile-submit" disabled={saving}>{saving ? <><LoaderCircle className="spin" size={17} /> 저장 중…</> : <><Check size={17} /> 가입 완료</>}</button><button type="button" className="profile-signout" onClick={onSignOut} disabled={saving}>다른 계정으로 로그인</button></div></div></form></div>;
+  const shownAvatar = previewUrl ?? currentProfile?.avatarUrl ?? null;
+  return <div className="profile-setup-backdrop"><form className="profile-setup" onSubmit={submit}>{editing && onCancel && <button type="button" className="profile-setup-close" aria-label="닫기" onClick={onCancel}><X size={20} /></button>}<div className="profile-setup-copy"><span className="eyebrow"><span /> {editing ? "MY PROFILE" : "WELCOME TO POCA POCKET"}</span><h2>{editing ? "프로필 수정" : "포카포켓에 오신 걸 환영해요"}</h2><p>{editing ? "닉네임과 프로필 사진을 원하는 모습으로 바꿀 수 있어요." : "Google 이름과 사진은 가져오지 않아요. 사용할 닉네임과 프로필 사진을 직접 설정해 주세요."}</p></div><div className="profile-setup-body"><div className="avatar-editor"><label className={`avatar-crop ${shownAvatar ? "has-image" : ""}`}>{shownAvatar ? <><Image src={shownAvatar} alt="프로필 사진 미리보기" fill unoptimized sizes="220px" style={previewUrl ? { objectPosition: `${positionX}% ${positionY}%`, transform: `scale(${zoom})` } : undefined} /><span className="avatar-guide" /></> : <><ImagePlus size={30} /><b>프사 선택</b><small>JPG · PNG · WEBP</small></>}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => chooseFile(event.target.files?.[0])} /></label>{previewUrl && <div className="avatar-controls"><label><span>확대</span><input type="range" min="1" max="3" step=".05" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label><label><span>좌우 위치</span><input type="range" min="0" max="100" value={positionX} onChange={(event) => setPositionX(Number(event.target.value))} /></label><label><span>상하 위치</span><input type="range" min="0" max="100" value={positionY} onChange={(event) => setPositionY(Number(event.target.value))} /></label></div>}</div><div className="profile-fields"><label><span>닉네임</span><input value={nickname} maxLength={20} onChange={(event) => setNickname(event.target.value)} placeholder="2~20자 닉네임" autoFocus /><small>{nickname.trim().length}/20 · 다른 사용자와 중복할 수 없어요.</small></label><div className="avatar-spec"><Camera size={16} /><span><b>자동 이미지 최적화</b>256×256 WebP · 목표 30~60KB · 최종 최대 100KB</span></div>{error && <p className="profile-error">{error}</p>}<button className="primary-button profile-submit" disabled={saving}>{saving ? <><LoaderCircle className="spin" size={17} /> 저장 중…</> : <><Check size={17} /> {editing ? "변경사항 저장" : "가입 완료"}</>}</button>{!editing && <button type="button" className="profile-signout" onClick={onSignOut} disabled={saving}>다른 계정으로 로그인</button>}</div></div></form></div>;
 }
 

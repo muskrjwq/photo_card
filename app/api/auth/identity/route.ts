@@ -31,12 +31,8 @@ export async function GET(request: Request) {
     user: {
       id: data.user.id,
       email: data.user.email ?? null,
-      name:
-        data.user.user_metadata?.full_name ??
-        data.user.user_metadata?.name ??
-        data.user.email ??
-        "포카 수집가",
-      avatarUrl: data.user.user_metadata?.avatar_url ?? null,
+      name: "포카 수집가",
+      avatarUrl: null,
     },
     isAdmin:
       Boolean(adminEmail && data.user.email) &&

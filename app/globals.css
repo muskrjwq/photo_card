@@ -2,6 +2,14 @@
 @import "tw-animate-css";
 @import "../vendor/shadcn-tailwind-4.13.0.css";
 
+.album-header-actions { display: flex; gap: 8px; margin-left: auto; }
+.profile-setup { position: relative; }
+.profile-setup-close { position: absolute; top: 16px; right: 16px; z-index: 5; width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid #e5d9d4; color: #675e59; background: white; border-radius: 50%; cursor: pointer; }
+@media (max-width: 640px) {
+  .collection-page .album-header-actions { width: 100%; margin: 0; }
+  .collection-page .album-header-actions button { flex: 1; }
+}
+
 @utility scrollbar-thin {
   scrollbar-width: thin;
 }
