@@ -20,6 +20,13 @@ function fileToDataUrl(file: File) {
   });
 }
 
+function editorErrorMessage(reason: unknown, fallback: string) {
+  if (reason instanceof TypeError && /fetch/i.test(reason.message)) {
+    return "로컬 편집 서비스에 연결할 수 없습니다. 실행 중인 개발 서버를 완전히 종료한 뒤 npm run dev로 다시 시작해 주세요.";
+  }
+  return reason instanceof Error ? reason.message : fallback;
+}
+
 export default function LocalCardEditor({ card, onClose }: EditorProps) {
   const [type, setType] = useState<"album" | "event">(card?.category ?? "event");
   const [collection, setCollection] = useState(card?.collection ?? "");
@@ -79,7 +86,7 @@ export default function LocalCardEditor({ card, onClose }: EditorProps) {
       if (result.recognitionIndexPending) window.alert("저장했습니다. 새 이미지의 인식 특징은 커밋 전에 npm run recognition:index 명령으로 갱신해 주세요.");
       window.location.reload();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "저장하지 못했습니다. 로컬 편집 서버를 확인해 주세요.");
+      setError(editorErrorMessage(reason, "저장하지 못했습니다. 로컬 편집 서버를 확인해 주세요."));
       setSaving(false);
     }
   };
@@ -105,7 +112,7 @@ export default function LocalCardEditor({ card, onClose }: EditorProps) {
       window.alert("삭제했습니다. 인식 특징 파일에서도 제거하려면 커밋 전에 npm run recognition:index 명령을 실행해 주세요.");
       window.location.reload();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "삭제하지 못했습니다. 로컬 편집 서버를 확인해 주세요.");
+      setError(editorErrorMessage(reason, "삭제하지 못했습니다. 로컬 편집 서버를 확인해 주세요."));
       setSaving(false);
     }
   };
