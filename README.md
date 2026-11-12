@@ -81,7 +81,10 @@ site.config.ts            사이트별 최상위 설정
 
 ## 크레딧
 
-- 포카 이미지·메타데이터 출처: [리센느 음원총공팀 포카사전](https://rescene.stream/apps/photocards)
+- 기본 포카 이미지·메타데이터: [리센느 음원총공팀 포카사전](https://rescene.stream/apps/photocards)
+- 이벤트 포카: [Scene Simulation](https://scene-simulation.github.io/)
+- Lip Bomb 앨범 포카: [@bemyzena_](https://x.com/bemyzena_)
+- Pulse 포카: MaxKim
 - 특징 추출: [VERLab XFeat](https://github.com/verlab/accelerated_features), CVPR 2024, Apache-2.0
 - ONNX 변환 모델: [XFeat Image Matching ONNX Sample](https://github.com/Kazuhito00/XFeat-Image-Matching-ONNX-Sample), Apache-2.0
 - 브라우저 추론: [ONNX Runtime Web](https://onnxruntime.ai/docs/get-started/with-javascript/web.html)
