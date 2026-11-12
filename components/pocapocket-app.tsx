@@ -13,8 +13,12 @@ import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 type View = "catalog" | "recognize" | "collection" | "settings";
 type AuthUser = { id: string; email: string | null; name: string; avatarUrl: string | null };
+type CatalogSort = "release-asc" | "release-desc" | "owners-desc" | "owners-asc";
 const albumCollectionNames = collections.filter((collection) => catalogCards.some((card) => card.collection === collection && card.category === "album"));
 const eventCollectionNames = collections.filter((collection) => !albumCollectionNames.includes(collection));
+const catalogReleaseOrder = new Map(catalogCards.map((card, index) => [card.id, index]));
+const catalogSeriesReleaseOrder = new Map<number, number>();
+catalogCards.forEach((card, index) => { if (!catalogSeriesReleaseOrder.has(card.idNumber)) catalogSeriesReleaseOrder.set(card.idNumber, index); });
 const navItems = [
   { id: "catalog" as View, label: "포카 명부", icon: BookOpen },
   { id: "recognize" as View, label: "포카 찾기", icon: Camera },
@@ -31,12 +35,12 @@ function CardArtwork({ card, blurred = false, priority = false }: { card: Catalo
   </div>;
 }
 
-function PhotoCard({ card, owned, onToggle, onOpen, globalBlur }: { card: CatalogCard; owned: boolean; onToggle: () => void; onOpen: () => void; globalBlur: boolean }) {
+function PhotoCard({ card, owned, ownerCount, onToggle, onOpen, globalBlur }: { card: CatalogCard; owned: boolean; ownerCount: number; onToggle: () => void; onOpen: () => void; globalBlur: boolean }) {
   return <article className="photo-card" role="button" tabIndex={0} aria-label={`${card.member} ${card.name} 상세보기`} onClick={onOpen} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}>
     <CardArtwork card={card} blurred={(globalBlur && !owned) || card.sensitive} />
     <div className="card-copy"><div><span className="member-chip">{card.member}</span>{card.rare && <span className="rare-chip">RARE</span>}</div>
       <h3>{card.name}</h3><p>{card.collection}</p>
-      <div className="card-bottom"><span className="owned-count"><Users size={13} /> {card.owners.toLocaleString()}명 소장</span><button className={`own-button ${owned ? "owned" : ""}`} aria-label={owned ? "나의 포카에서 제거" : "나의 포카에 추가"} onClick={(event) => { event.stopPropagation(); onToggle(); }}>{owned ? <Check size={15} strokeWidth={3} /> : <Plus size={15} strokeWidth={2.5} />}</button></div>
+      <div className="card-bottom"><span className="owned-count"><Users size={13} /> {ownerCount.toLocaleString()}명 소장</span><button className={`own-button ${owned ? "owned" : ""}`} aria-label={owned ? "나의 포카에서 제거" : "나의 포카에 추가"} onClick={(event) => { event.stopPropagation(); onToggle(); }}>{owned ? <Check size={15} strokeWidth={3} /> : <Plus size={15} strokeWidth={2.5} />}</button></div>
     </div>
   </article>;
 }
@@ -74,24 +78,35 @@ function CardDetailModal({ card, seriesCards, ownedIds, globalBlur, onToggle, on
 }
 
 function Filters({ member, setMember, collection, setCollection }: { member: string; setMember: (v: string) => void; collection: string; setCollection: (v: string) => void }) {
-  return <div className="filters" aria-label="포카 필터"><button className={member === "전체" ? "active" : ""} onClick={() => setMember("전체")}>전체</button>
-    {members.map((item) => <button key={item} className={member === item ? "active" : ""} onClick={() => setMember(item)}>{item}</button>)}
+  return <div className="filters" aria-label="포카 필터"><div className="member-filter-scroll"><button className={member === "전체" ? "active" : ""} onClick={() => setMember("전체")}>전체</button>
+    {members.map((item) => <button key={item} className={member === item ? "active" : ""} onClick={() => setMember(item)}>{item}</button>)}</div>
     <span className="filter-divider" /><label className="select-wrap"><select value={collection} onChange={(e) => setCollection(e.target.value)}><option>모든 앨범 · 이벤트</option><optgroup label="앨범">{albumCollectionNames.map((item) => <option key={item}>{item}</option>)}</optgroup><optgroup label="이벤트 · 기타">{eventCollectionNames.map((item) => <option key={item}>{item}</option>)}</optgroup></select><ChevronDown size={15} /></label>
   </div>;
 }
 
-function CatalogView({ owned, toggleOwned, globalBlur, setView }: { owned: string[]; toggleOwned: (id: string) => void; globalBlur: boolean; setView: (v: View) => void }) {
+function CatalogView({ owned, ownerCounts, toggleOwned, globalBlur, setView }: { owned: string[]; ownerCounts: Record<string, number>; toggleOwned: (id: string) => void; globalBlur: boolean; setView: (v: View) => void }) {
   const [member, setMember] = useState("전체");
   const [collection, setCollection] = useState("모든 앨범 · 이벤트");
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(40);
   const [columns, setColumns] = useState(4);
+  const [sort, setSort] = useState<CatalogSort>("release-asc");
   const [selectedCard, setSelectedCard] = useState<CatalogCard | null>(null);
-  const filtered = useMemo(() => catalogCards.filter((card) =>
+  const filtered = useMemo(() => {
+    const cards = catalogCards.filter((card) =>
     (member === "전체" || card.member === member || (member === "단체" && card.kind === "group") || (member === "유닛" && card.kind === "unit")) &&
     (collection === "모든 앨범 · 이벤트" || card.collection === collection) && `${card.member} ${card.name} ${card.collection} ${card.source}`.toLowerCase().includes(query.toLowerCase())
-  ), [member, collection, query]);
-  useEffect(() => setVisibleCount(40), [member, collection, query]);
+    );
+    return cards.sort((a, b) => {
+      const releaseDifference = (catalogReleaseOrder.get(a.id) ?? 0) - (catalogReleaseOrder.get(b.id) ?? 0);
+      const seriesDifference = (catalogSeriesReleaseOrder.get(a.idNumber) ?? 0) - (catalogSeriesReleaseOrder.get(b.idNumber) ?? 0);
+      if (sort === "release-desc") return -seriesDifference || releaseDifference;
+      if (sort === "owners-desc") return (ownerCounts[b.id] ?? 0) - (ownerCounts[a.id] ?? 0) || releaseDifference;
+      if (sort === "owners-asc") return (ownerCounts[a.id] ?? 0) - (ownerCounts[b.id] ?? 0) || releaseDifference;
+      return releaseDifference;
+    });
+  }, [member, collection, query, sort, ownerCounts]);
+  useEffect(() => setVisibleCount(40), [member, collection, query, sort]);
   useEffect(() => {
     const saved = Number(window.localStorage.getItem("pocapocket.catalogColumns"));
     if (Number.isInteger(saved) && saved >= 2 && saved <= 8) setColumns(saved);
@@ -105,8 +120,8 @@ function CatalogView({ owned, toggleOwned, globalBlur, setView }: { owned: strin
       <div className="hero-deck" aria-label="포카 예시"><div className="deck-card deck-left"><CardArtwork card={catalogCards[2]} /></div><div className="deck-card deck-center"><CardArtwork card={catalogCards[0]} priority /></div><div className="deck-card deck-right"><CardArtwork card={catalogCards[4]} /></div><span className="spark spark-one">✦</span><span className="spark spark-two">✦</span><span className="deck-note">현재 <strong>{catalogCards.length}</strong>장의 포카가<br />정리되어 있어요</span></div>
     </section>
     <section className="catalog-section" id="catalog-grid"><div className="section-heading"><div><span className="section-kicker">PHOTOCARD LIST</span><h2>포카 명부</h2><p>멤버와 앨범을 골라 원하는 포카를 찾아보세요.</p></div><label className="catalog-search"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="포카명, 멤버, 출처 검색" /></label></div>
-      <Filters member={member} setMember={setMember} collection={collection} setCollection={setCollection} /><div className="result-bar"><span><strong>{filtered.length}</strong>장의 포카</span><div className="result-controls"><label className="column-slider"><LayoutGrid size={14} /><span>한 줄 <strong>{columns}</strong>장</span><input type="range" min="2" max="8" step="1" value={columns} aria-label={`한 줄에 ${columns}장 표시`} onChange={(event) => changeColumns(Number(event.target.value))} /></label><button><Filter size={14} /> 발매 · 공개 순 <ChevronDown size={13} /></button></div></div>
-      <div className="card-grid" style={{ "--catalog-columns": columns, "--catalog-tablet-columns": Math.min(columns, 4) } as CSSProperties}>{filtered.slice(0, visibleCount).map((card) => <PhotoCard key={card.id} card={card} owned={owned.includes(card.id)} onToggle={() => toggleOwned(card.id)} onOpen={() => setSelectedCard(card)} globalBlur={globalBlur} />)}</div>
+      <Filters member={member} setMember={setMember} collection={collection} setCollection={setCollection} /><div className="result-bar"><span><strong>{filtered.length}</strong>장의 포카</span><div className="result-controls"><label className="column-slider"><LayoutGrid size={14} /><span>한 줄 <strong>{columns}</strong>장</span><input type="range" min="2" max="8" step="1" value={columns} aria-label={`한 줄에 ${columns}장 표시`} onChange={(event) => changeColumns(Number(event.target.value))} /></label><label className="sort-wrap"><Filter size={14} /><select value={sort} aria-label="포카 정렬 순서" onChange={(event) => setSort(event.target.value as CatalogSort)}><option value="release-asc">발매 · 공개 순</option><option value="release-desc">최신순</option><option value="owners-desc">소장 많은 순</option><option value="owners-asc">소장 적은 순</option></select><ChevronDown size={13} /></label></div></div>
+      <div className="card-grid" style={{ "--catalog-columns": columns, "--catalog-tablet-columns": Math.min(columns, 4) } as CSSProperties}>{filtered.slice(0, visibleCount).map((card) => <PhotoCard key={card.id} card={card} owned={owned.includes(card.id)} ownerCount={ownerCounts[card.id] ?? 0} onToggle={() => toggleOwned(card.id)} onOpen={() => setSelectedCard(card)} globalBlur={globalBlur} />)}</div>
       {visibleCount < filtered.length && <button className="load-more" onClick={() => setVisibleCount((count) => count + 40)}>포카 더 보기 <span>{Math.min(visibleCount, filtered.length)} / {filtered.length}</span></button>}
       {filtered.length === 0 && <div className="empty-state"><Search size={32} /><h3>조건에 맞는 포카가 없어요</h3><p>필터나 검색어를 바꿔보세요.</p></div>}
       {selectedCard && <CardDetailModal card={selectedCard} seriesCards={catalogCards.filter((card) => card.idNumber === selectedCard.idNumber)} ownedIds={owned} globalBlur={globalBlur} onToggle={() => toggleOwned(selectedCard.id)} onSelect={setSelectedCard} onClose={() => setSelectedCard(null)} />}
@@ -156,7 +171,7 @@ function SettingsView({ globalBlur, setGlobalBlur }: { globalBlur: boolean; setG
 }
 
 export default function PocaPocketApp() {
-  const [view, setView] = useState<View>("catalog"); const [owned, setOwned] = useState<string[]>([]); const [globalBlur, setGlobalBlur] = useState(false); const [mobileOpen, setMobileOpen] = useState(false); const [toast, setToast] = useState(""); const [authUser, setAuthUser] = useState<AuthUser | null>(null); const [isAdmin, setIsAdmin] = useState(false); const [authReady, setAuthReady] = useState(false);
+  const [view, setView] = useState<View>("catalog"); const [owned, setOwned] = useState<string[]>([]); const [ownerCounts, setOwnerCounts] = useState<Record<string, number>>({}); const [globalBlur, setGlobalBlur] = useState(false); const [mobileOpen, setMobileOpen] = useState(false); const [toast, setToast] = useState(""); const [authUser, setAuthUser] = useState<AuthUser | null>(null); const [isAdmin, setIsAdmin] = useState(false); const [authReady, setAuthReady] = useState(false);
   const showToast = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 2400); };
 
   useEffect(() => {
@@ -178,6 +193,18 @@ export default function PocaPocketApp() {
     return () => { active = false; listener.subscription.unsubscribe(); };
   }, []);
 
+  useEffect(() => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+    let active = true;
+    void supabase.rpc("get_card_owner_counts").then(({ data, error }) => {
+      if (!active || error) return;
+      const counts = Object.fromEntries((data ?? []).map((row) => [row.card_id, Number(row.owner_count)]));
+      setOwnerCounts(counts);
+    });
+    return () => { active = false; };
+  }, []);
+
   useEffect(() => { if (view === "settings" && !isAdmin) setView("catalog"); }, [isAdmin, view]);
 
   const signIn = async () => {
@@ -192,16 +219,17 @@ export default function PocaPocketApp() {
     if (!authUser || !supabase) { await signIn(); return; }
     const removing = owned.includes(id);
     setOwned((current) => removing ? current.filter((item) => item !== id) : [...current, id]);
+    setOwnerCounts((current) => ({ ...current, [id]: Math.max(0, (current[id] ?? 0) + (removing ? -1 : 1)) }));
     const result = removing
       ? await supabase.from("user_cards").delete().eq("user_id", authUser.id).eq("card_id", id)
       : await supabase.from("user_cards").insert({ user_id: authUser.id, card_id: id });
-    if (result.error) { setOwned((current) => removing ? [...current, id] : current.filter((item) => item !== id)); showToast("저장하지 못했어요. 잠시 후 다시 시도해 주세요"); }
+    if (result.error) { setOwned((current) => removing ? [...current, id] : current.filter((item) => item !== id)); setOwnerCounts((current) => ({ ...current, [id]: Math.max(0, (current[id] ?? 0) + (removing ? 1 : -1)) })); showToast("저장하지 못했어요. 잠시 후 다시 시도해 주세요"); }
   };
   const addOwned = async (id: string) => { if (!owned.includes(id)) await toggleOwned(id); if (authUser) showToast("나의 포카에 추가했어요"); };
   const navigate = (next: View) => { if (next === "settings" && !isAdmin) return; setView(next); setMobileOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const initial = (authUser?.name || authUser?.email || "P").trim().charAt(0).toLocaleUpperCase();
   return <main><header className="site-header"><button className="mobile-menu" onClick={() => setMobileOpen(!mobileOpen)}>{mobileOpen ? <X /> : <Menu />}</button><button className="logo-button" onClick={() => navigate("catalog")}><Logo /></button><nav className={mobileOpen ? "open" : ""}>{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)}><item.icon size={17} /> {item.label}</button>)}</nav><div className="header-actions"><button className="icon-button"><Heart size={18} /></button>{authUser ? <><button className="profile-button" title={authUser.email ?? authUser.name} onClick={() => navigate("collection")}>{initial}</button><button className="icon-button" aria-label="로그아웃" title="로그아웃" onClick={signOut}><LogOut size={17} /></button></> : <button className="google-login-button" disabled={!authReady} onClick={signIn}><LogIn size={16} /> Google 로그인</button>}{isAdmin && <button className="icon-button desktop-settings" aria-label="관리자 설정" onClick={() => navigate("settings")}><Settings2 size={18} /></button>}</div></header>
-    {view === "catalog" && <CatalogView owned={owned} toggleOwned={toggleOwned} globalBlur={globalBlur} setView={navigate} />}{view === "recognize" && <RecognizeView addOwned={addOwned} />}{view === "collection" && <CollectionView owned={owned} toggleOwned={toggleOwned} globalBlur={globalBlur} user={authUser} onSignIn={signIn} />}{view === "settings" && isAdmin && <SettingsView globalBlur={globalBlur} setGlobalBlur={setGlobalBlur} />}
+    {view === "catalog" && <CatalogView owned={owned} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} setView={navigate} />}{view === "recognize" && <RecognizeView addOwned={addOwned} />}{view === "collection" && <CollectionView owned={owned} toggleOwned={toggleOwned} globalBlur={globalBlur} user={authUser} onSignIn={signIn} />}{view === "settings" && isAdmin && <SettingsView globalBlur={globalBlur} setGlobalBlur={setGlobalBlur} />}
     <footer><Logo /><p>팬이 만들고, 팬이 함께 채우는 오픈 포토카드 아카이브.</p><div><a href="https://github.com" target="_blank">GitHub</a><a href="https://rescene.stream/apps/photocards" target="_blank" rel="noreferrer">포카 자료 출처</a>{isAdmin && <button onClick={() => navigate("settings")}>관리자 설정</button>}<span>MIT License</span></div><small>포카 이미지·메타데이터: 리센느 음원총공팀 포카사전 · 인식: XFeat (Apache-2.0). RESCENE 및 포토카드 권리는 각 권리자에게 있습니다.</small></footer>{toast && <div className="toast"><Check size={16} /> {toast}</div>}
   </main>;
 }
