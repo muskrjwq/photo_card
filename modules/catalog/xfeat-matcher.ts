@@ -21,7 +21,7 @@ export interface MatchResult {
   rankingScore: number;
 }
 
-export interface MatchResponse { candidates: MatchResult[]; confident: boolean }
+export interface MatchResponse { match: MatchResult }
 
 async function getRuntime() {
   if (!runtime) runtime = import("onnxruntime-web").then((ort) => { ort.env.wasm.numThreads = 1; return ort; });
@@ -172,8 +172,10 @@ export async function matchPhotoCard(file: File, cards: CatalogCard[], meta: XFe
     if (inliers >= 7 && ratio >= 0.28 && coverage >= 0.025) possible.push({ card: item.card, confidence: geometryScore, goodMatches: inliers, inlierRatio: ratio, spatialCoverage: coverage, coarseScore: item.coarse, rankingScore });
     onProgress?.(index + 2, 81); if (index % 4 === 3) await new Promise<void>(resolve => window.setTimeout(resolve, 0));
   }
-  const candidates = possible.sort((a, b) => b.rankingScore - a.rankingScore).slice(0, 4);
-  if (!candidates.length) return null;
-  const primary = candidates[0]; const margin = primary.rankingScore - (candidates[1]?.rankingScore ?? 0);
-  return { candidates, confident: primary.goodMatches >= 18 && primary.inlierRatio >= 0.45 && primary.spatialCoverage >= 0.06 && margin >= 0.035 };
+  const ranked = possible.sort((a, b) => b.rankingScore - a.rankingScore);
+  if (!ranked.length) return null;
+  const primary = ranked[0];
+  const margin = primary.rankingScore - (ranked[1]?.rankingScore ?? 0);
+  const confident = primary.goodMatches >= 18 && primary.inlierRatio >= 0.45 && primary.spatialCoverage >= 0.06 && margin >= 0.035;
+  return confident ? { match: primary } : null;
 }
