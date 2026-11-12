@@ -42,6 +42,7 @@ yarn-error.log*
 /.codex/
 /outputs/
 /work/
+/.pocapocket-trash/
 
 # OS metadata
 .DS_Store

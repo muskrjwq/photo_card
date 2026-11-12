@@ -149,6 +149,35 @@ async function saveCard(payload) {
   return { cardId, idNumber: Number(idNumber), sameSeries: Boolean(sameSeries), recognitionIndexPending: Boolean(payload.imageBase64) };
 }
 
+async function deleteCard(cardId) {
+  if (!/^[a-f0-9]{8,12}$/i.test(cardId ?? "")) throw new Error("invalid_card_id");
+  const files = await loadCsvFiles();
+  const destination = files.find((file) => file.rows.some((row) => row.cardId === cardId));
+  if (!destination) throw new Error("card_not_found");
+  const filePath = path.join(dataDirectory, destination.name);
+  const originalCsv = await readFile(filePath, "utf8");
+  const deletedRow = destination.rows.find((row) => row.cardId === cardId);
+  const imagePath = await findImage(cardId);
+  const trashDirectory = path.join(projectRoot, ".pocapocket-trash", `${Date.now()}-${cardId}`);
+  await mkdir(trashDirectory, { recursive: true });
+  let trashedImagePath = null;
+  if (imagePath) {
+    trashedImagePath = path.join(trashDirectory, path.basename(imagePath));
+    await rename(imagePath, trashedImagePath);
+  }
+  await writeFile(path.join(trashDirectory, "card.json"), `${JSON.stringify({ sourceFile: destination.name, row: deletedRow, originalImagePath: imagePath ? path.relative(projectRoot, imagePath) : null }, null, 2)}\n`, "utf8");
+  destination.rows = destination.rows.filter((row) => row.cardId !== cardId);
+  try {
+    await writeFile(filePath, encodeCsv(destination.headers, destination.rows), "utf8");
+    await execFileAsync(process.execPath, [path.join(projectRoot, "scripts", "generate-rescene-catalog.mjs")], { cwd: projectRoot, maxBuffer: 1024 * 1024 * 10 });
+  } catch (error) {
+    await writeFile(filePath, originalCsv, "utf8");
+    if (imagePath && trashedImagePath) await rename(trashedImagePath, imagePath);
+    throw error;
+  }
+  return { cardId, deleted: true, recognitionIndexPending: Boolean(imagePath), trashDirectory: path.relative(projectRoot, trashDirectory) };
+}
+
 function isAllowedOrigin(origin) { return /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(origin ?? ""); }
 function send(response, status, body, origin) {
   if (isAllowedOrigin(origin)) response.setHeader("Access-Control-Allow-Origin", origin);
@@ -170,7 +199,8 @@ http.createServer(async (request, response) => {
   if (request.method !== "POST" || request.url !== "/cards") return send(response, 404, { error: "not_found" }, origin);
   try {
     if (!await verifyAdmin(request)) return send(response, 401, { error: "admin_required" }, origin);
-    const result = await saveCard(await readJson(request));
+    const payload = await readJson(request);
+    const result = payload.mode === "delete" ? await deleteCard(payload.cardId) : await saveCard(payload);
     return send(response, 200, result, origin);
   } catch (error) {
     console.error("[local catalog]", error);

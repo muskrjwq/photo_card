@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ImagePlus, Save, X } from "lucide-react";
+import { Check, ImagePlus, Save, Trash2, X } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { catalogCards, collections, members, type CatalogCard } from "@/modules/catalog";
@@ -84,6 +84,32 @@ export default function LocalCardEditor({ card, onClose }: EditorProps) {
     }
   };
 
+  const remove = async () => {
+    if (!card || saving) return;
+    const confirmed = window.confirm(`“${card.member} · ${card.name}” 포카를 삭제할까요?\n\nCSV에서 제거되고 이미지는 로컬 휴지통으로 이동합니다.`);
+    if (!confirmed) return;
+    setSaving(true);
+    setError("");
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data } = await supabase?.auth.getSession() ?? { data: { session: null } };
+      const token = data.session?.access_token;
+      if (!token) throw new Error("관리자 계정으로 다시 로그인해 주세요.");
+      const response = await fetch("http://127.0.0.1:4317/cards", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "delete", cardId: card.id }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error === "admin_required" ? "관리자 인증에 실패했습니다." : `삭제하지 못했습니다: ${result.error ?? response.status}`);
+      window.alert("삭제했습니다. 인식 특징 파일에서도 제거하려면 커밋 전에 npm run recognition:index 명령을 실행해 주세요.");
+      window.location.reload();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "삭제하지 못했습니다. 로컬 편집 서버를 확인해 주세요.");
+      setSaving(false);
+    }
+  };
+
   return <div className="local-editor-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>
     <form className="local-editor" onSubmit={submit}>
       <div className="local-editor-heading"><div><span className="section-kicker">LOCAL CATALOG EDITOR</span><h2>{card ? "포카 편집" : "새 포카 추가"}</h2><p>저장 내용은 프로젝트의 CSV와 이미지 파일에 직접 반영됩니다.</p></div><button type="button" aria-label="닫기" onClick={onClose} disabled={saving}><X size={20} /></button></div>
@@ -95,7 +121,7 @@ export default function LocalCardEditor({ card, onClose }: EditorProps) {
           <label><span>포카 이름</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="포카 이름" required /></label>
           <div className={`series-match-note ${matchingSeries ? "matched" : ""}`}>{matchingSeries ? <><Check size={15} /><span><b>같은 시리즈를 찾았습니다.</b> #{matchingSeries.idNumber} · {matchingSeries.member} 포카와 같은 시리즈로 저장합니다.</span></> : <span>같은 분류·앨범/이벤트·포카명의 카드가 있으면 기존 시리즈에 자동으로 연결됩니다.</span>}</div>
           {error && <p className="local-editor-error">{error}</p>}
-          <div className="local-editor-actions"><button type="button" className="secondary-button" onClick={onClose} disabled={saving}>취소</button><button type="submit" className="primary-button" disabled={saving}><Save size={16} /> {saving ? "저장 중…" : "CSV에 저장"}</button></div>
+          <div className={`local-editor-actions ${card ? "has-delete" : ""}`}>{card && <button type="button" className="local-delete-button" onClick={remove} disabled={saving}><Trash2 size={15} /> 삭제</button>}<button type="button" className="secondary-button" onClick={onClose} disabled={saving}>취소</button><button type="submit" className="primary-button" disabled={saving}><Save size={16} /> {saving ? "처리 중…" : "CSV에 저장"}</button></div>
         </div>
       </div>
     </form>
