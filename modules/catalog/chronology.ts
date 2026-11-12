@@ -21,7 +21,6 @@ const collectionDates: Record<string, string> = {
   한스킨: "2026-08-24",
   할리스커피: "2026-08-26",
   나랑드: "2026-09-01",
-  "더현대 팝업 스토어": "2026-09-15",
   "CU리센느빵 시즌1": "2026-09-17",
   MLB: "2026-10-07",
   "CU리센느빵 시즌2": "2026-10-25",
@@ -31,6 +30,7 @@ const collectionDates: Record<string, string> = {
 };
 
 function specificEventDate(card: Pick<CatalogCard, "collection" | "name">) {
+  if (card.collection === "기타" && /^더현대 /.test(card.name)) return "2026-09-15";
   if (card.collection === "Pretty Girl") {
     if (/Week 2/i.test(card.name)) return "2026-07-15";
     if (/Week 3/i.test(card.name)) return "2026-07-22";

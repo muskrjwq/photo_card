@@ -11,7 +11,7 @@
     "catalog:normalize-ids": "node scripts/normalize-series-ids.mjs",
     "catalog:validate-ids": "node scripts/validate-series-ids.mjs",
     "recognition:index": "node scripts/generate-xfeat-index.mjs",
-    "dev": "npm run catalog:generate && node scripts/run-framework.mjs dev",
+    "dev": "node scripts/dev.mjs",
     "build": "npm run catalog:generate && node scripts/run-framework.mjs build",
     "start": "node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js dev --config dist/server/wrangler.json --local --persist-to .wrangler/state --ip 127.0.0.1 --inspector-port 0",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",

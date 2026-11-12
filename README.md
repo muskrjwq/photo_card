@@ -37,6 +37,16 @@ ADMIN_EMAIL=YOUR_GOOGLE_ACCOUNT_EMAIL
 
 `ADMIN_EMAIL`은 서버 전용 값입니다. 로그인 토큰을 서버에서 검증한 뒤 해당 Google 계정에만 관리자 UI를 노출하며, 향후 관리자 API도 같은 검사를 거쳐야 합니다. Supabase secret/service-role key는 브라우저 코드나 저장소에 넣지 마세요.
 
+### 로컬 포카 편집
+
+`npm run dev`는 웹 앱과 함께 `127.0.0.1:4317`의 로컬 편집 서비스를 실행합니다. 관리자 Google 계정으로 로그인하면 카드 상세 팝업에 `편집`, 명부 상단에 `새 포카 추가`가 나타납니다. 저장 내용은 원본 CSV와 `public/rescene_poca` 이미지에 직접 반영되며 새 이미지는 WebP로 변환됩니다. 공개 production 빌드에서는 편집 UI와 로컬 쓰기 서비스가 제공되지 않습니다.
+
+이미지를 추가하거나 교체한 뒤 커밋하기 전에는 다음 명령으로 인식 특징을 갱신하세요.
+
+```bash
+npm run recognition:index
+```
+
 ## 프로젝트 구조
 
 ```text

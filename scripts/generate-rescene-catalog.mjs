@@ -101,7 +101,7 @@ const collectionOrder = [
   "팬클럽", "응원봉", "팬콘", "KCON-Japan", "Pretty Girl", "카사베르디",
   "나랑드", "도미노스", "한스킨", "에이페", "할리스커피",
   "CU리센느빵 시즌1", "CU리센느빵 시즌2", "와키윌리", "MLB",
-  "CU 덕연이 딸 도시락", "더현대 팝업 스토어", "기타",
+  "CU 덕연이 딸 도시락", "기타",
 ];
 const collectionRank = new Map(collectionOrder.map((collection, index) => [collection, index]));
 const cards = [];
@@ -117,7 +117,7 @@ for (let index = 0; index < rows.length; index += 1) {
     kind: row.memberName === "유닛" ? "unit" : row.memberName === "단체" ? "group" : "member",
     name: row.name,
     collection,
-    category: albumCategories.has(row.category) ? "album" : "event",
+    category: row.catalogType === "album" || row.catalogType === "event" ? row.catalogType : albumCategories.has(row.category) ? "album" : "event",
     source: row.category,
     image: expectedPath,
     owners: 0,

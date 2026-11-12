@@ -2,7 +2,7 @@
 
 import {
   ArrowRight, BookOpen, Camera, Check, ChevronDown, CircleHelp, Code2,
-  Eye, Filter, Heart, ImagePlus, LayoutGrid, LogIn, LogOut, Menu, Plus, Search,
+  Eye, FilePlus2, Filter, Heart, ImagePlus, LayoutGrid, LogIn, LogOut, Menu, Pencil, Plus, Search,
   Settings2, Share2, ShieldCheck, Sparkles, Upload, Users, X,
 } from "lucide-react";
 import Image from "next/image";
@@ -11,6 +11,7 @@ import { catalogCards, collections, members, recognitionXFeatIndex, type Catalog
 import { getCatalogChronology } from "@/modules/catalog/chronology";
 import { matchPhotoCard, type MatchResponse } from "@/modules/catalog/xfeat-matcher";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import LocalCardEditor from "@/components/local-card-editor";
 
 type View = "catalog" | "recognize" | "collection" | "settings";
 type AuthUser = { id: string; email: string | null; name: string; avatarUrl: string | null };
@@ -44,7 +45,7 @@ function PhotoCard({ card, owned, ownerCount, onToggle, onOpen, globalBlur }: { 
   </article>;
 }
 
-function CardDetailModal({ card, seriesCards, ownedIds, globalBlur, onToggle, onSelect, onClose }: { card: CatalogCard; seriesCards: CatalogCard[]; ownedIds: string[]; globalBlur: boolean; onToggle: () => void; onSelect: (card: CatalogCard) => void; onClose: () => void }) {
+function CardDetailModal({ card, seriesCards, ownedIds, globalBlur, onToggle, onSelect, onEdit, onClose }: { card: CatalogCard; seriesCards: CatalogCard[]; ownedIds: string[]; globalBlur: boolean; onToggle: () => void; onSelect: (card: CatalogCard) => void; onEdit?: () => void; onClose: () => void }) {
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -66,7 +67,7 @@ function CardDetailModal({ card, seriesCards, ownedIds, globalBlur, onToggle, on
           <p className="detail-collection">{card.collection}</p>
           <dl className="card-detail-list"><div><dt>출처</dt><dd>{card.source}</dd></div><div><dt>소장 현황</dt><dd>{owned ? "내가 소장한 포카" : "미소장 포카"}</dd></div><div><dt>같은 시리즈</dt><dd>{seriesCards.length}장</dd></div></dl>
           {detailTags.length > 0 && <div className="detail-tags">{detailTags.slice(0, 6).map((tag) => <span key={tag}>{tag}</span>)}</div>}
-          <button className={`detail-own-button ${owned ? "owned" : ""}`} onClick={onToggle}>{owned ? <><Check size={17} /> 나의 포카에서 제거</> : <><Plus size={17} /> 나의 포카에 추가</>}</button>
+          <div className="detail-actions">{onEdit && <button className="detail-edit-button" onClick={onEdit}><Pencil size={16} /> 편집</button>}<button className={`detail-own-button ${owned ? "owned" : ""}`} onClick={onToggle}>{owned ? <><Check size={17} /> 나의 포카에서 제거</> : <><Plus size={17} /> 나의 포카에 추가</>}</button></div>
         </div>
       </div>
       <div className="series-section"><div><span className="section-kicker">SAME SERIES</span><h3>같은 시리즈의 다른 포카</h3><p>같은 콘셉트로 발매된 다른 멤버 포카예요.</p></div>
@@ -83,7 +84,7 @@ function Filters({ member, setMember, collection, setCollection }: { member: str
   </div>;
 }
 
-function CatalogView({ owned, ownerCounts, toggleOwned, globalBlur, setView }: { owned: string[]; ownerCounts: Record<string, number>; toggleOwned: (id: string) => void; globalBlur: boolean; setView: (v: View) => void }) {
+function CatalogView({ owned, ownerCounts, toggleOwned, globalBlur, setView, localAdminAccess }: { owned: string[]; ownerCounts: Record<string, number>; toggleOwned: (id: string) => void; globalBlur: boolean; setView: (v: View) => void; localAdminAccess: boolean }) {
   const [member, setMember] = useState("전체");
   const [collection, setCollection] = useState("모든 앨범 · 이벤트");
   const [query, setQuery] = useState("");
@@ -91,6 +92,7 @@ function CatalogView({ owned, ownerCounts, toggleOwned, globalBlur, setView }: {
   const [columns, setColumns] = useState(4);
   const [sort, setSort] = useState<CatalogSort>("release-asc");
   const [selectedCard, setSelectedCard] = useState<CatalogCard | null>(null);
+  const [editorCard, setEditorCard] = useState<CatalogCard | "new" | null>(null);
   const filtered = useMemo(() => {
     const cards = catalogCards.filter((card) =>
     (member === "전체" || card.member === member || (member === "단체" && card.kind === "group") || (member === "유닛" && card.kind === "unit")) &&
@@ -118,12 +120,13 @@ function CatalogView({ owned, ownerCounts, toggleOwned, globalBlur, setView }: {
     <section className="hero"><div><span className="eyebrow"><span /> RESCENE PHOTOCARD ARCHIVE</span><h1><span>리센느의 모든 순간을</span><br /><em>한 장씩, 차곡차곡.</em></h1><p>앨범부터 이벤트 특전까지. 포카를 찾고, 기록하고,<br className="desktop-only" /> 나만의 수집 앨범을 완성해 보세요.</p><div className="hero-actions"><button className="primary-button" onClick={() => setView("recognize")}><Camera size={18} /> 사진으로 포카 찾기</button><button className="text-button" onClick={() => document.getElementById("catalog-grid")?.scrollIntoView({ behavior: "smooth" })}>명부 둘러보기 <ArrowRight size={17} /></button></div></div>
       <div className="hero-deck" aria-label="포카 예시"><div className="deck-card deck-left"><CardArtwork card={catalogCards[2]} /></div><div className="deck-card deck-center"><CardArtwork card={catalogCards[0]} priority /></div><div className="deck-card deck-right"><CardArtwork card={catalogCards[4]} /></div><span className="spark spark-one">✦</span><span className="spark spark-two">✦</span><span className="deck-note">현재 <strong>{catalogCards.length}</strong>장의 포카가<br />정리되어 있어요</span></div>
     </section>
-    <section className="catalog-section" id="catalog-grid"><div className="section-heading"><div><span className="section-kicker">PHOTOCARD LIST</span><h2>포카 명부</h2><p>멤버와 앨범을 골라 원하는 포카를 찾아보세요.</p></div><label className="catalog-search"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="포카명, 멤버, 출처 검색" /></label></div>
+    <section className="catalog-section" id="catalog-grid"><div className="section-heading"><div><span className="section-kicker">PHOTOCARD LIST</span><h2>포카 명부</h2><p>멤버와 앨범을 골라 원하는 포카를 찾아보세요.</p></div><div className="catalog-heading-actions"><label className="catalog-search"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="포카명, 멤버, 출처 검색" /></label>{localAdminAccess && <button className="local-add-button" onClick={() => setEditorCard("new")}><FilePlus2 size={16} /> 새 포카 추가</button>}</div></div>
       <Filters member={member} setMember={setMember} collection={collection} setCollection={setCollection} /><div className="result-bar"><span><strong>{filtered.length}</strong>장의 포카</span><div className="result-controls"><label className="column-slider"><LayoutGrid size={14} /><span>한 줄 <strong>{columns}</strong>장</span><input type="range" min="2" max="8" step="1" value={columns} aria-label={`한 줄에 ${columns}장 표시`} onChange={(event) => changeColumns(Number(event.target.value))} /></label><label className="sort-wrap"><Filter size={14} /><select value={sort} aria-label="포카 정렬 순서" onChange={(event) => setSort(event.target.value as CatalogSort)}><option value="release-asc">발매 · 공개 순</option><option value="release-desc">최신순</option><option value="owners-desc">소장 많은 순</option><option value="owners-asc">소장 적은 순</option></select><ChevronDown size={13} /></label></div></div>
       <div className="card-grid" style={{ "--catalog-columns": columns, "--catalog-tablet-columns": Math.min(columns, 4) } as CSSProperties}>{filtered.slice(0, visibleCount).map((card) => <PhotoCard key={card.id} card={card} owned={owned.includes(card.id)} ownerCount={ownerCounts[card.id] ?? 0} onToggle={() => toggleOwned(card.id)} onOpen={() => setSelectedCard(card)} globalBlur={globalBlur} />)}</div>
       {visibleCount < filtered.length && <button className="load-more" onClick={() => setVisibleCount((count) => count + 40)}>포카 더 보기 <span>{Math.min(visibleCount, filtered.length)} / {filtered.length}</span></button>}
       {filtered.length === 0 && <div className="empty-state"><Search size={32} /><h3>조건에 맞는 포카가 없어요</h3><p>필터나 검색어를 바꿔보세요.</p></div>}
-      {selectedCard && <CardDetailModal card={selectedCard} seriesCards={catalogCards.filter((card) => card.idNumber === selectedCard.idNumber)} ownedIds={owned} globalBlur={globalBlur} onToggle={() => toggleOwned(selectedCard.id)} onSelect={setSelectedCard} onClose={() => setSelectedCard(null)} />}
+      {selectedCard && <CardDetailModal card={selectedCard} seriesCards={catalogCards.filter((card) => card.idNumber === selectedCard.idNumber)} ownedIds={owned} globalBlur={globalBlur} onToggle={() => toggleOwned(selectedCard.id)} onSelect={setSelectedCard} onEdit={localAdminAccess ? () => { setEditorCard(selectedCard); setSelectedCard(null); } : undefined} onClose={() => setSelectedCard(null)} />}
+      {editorCard && <LocalCardEditor card={editorCard === "new" ? undefined : editorCard} onClose={() => setEditorCard(null)} />}
     </section>
   </>;
 }
@@ -229,7 +232,7 @@ export default function PocaPocketApp() {
   const navigate = (next: View) => { if (next === "settings" && !localAdminAccess) return; setView(next); setMobileOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const initial = (authUser?.name || authUser?.email || "P").trim().charAt(0).toLocaleUpperCase();
   return <main><header className="site-header"><button className="mobile-menu" onClick={() => setMobileOpen(!mobileOpen)}>{mobileOpen ? <X /> : <Menu />}</button><button className="logo-button" onClick={() => navigate("catalog")}><Logo /></button><nav className={mobileOpen ? "open" : ""}>{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)}><item.icon size={17} /> {item.label}</button>)}</nav><div className="header-actions"><button className="icon-button"><Heart size={18} /></button>{authUser ? <><button className="profile-button" title={authUser.email ?? authUser.name} onClick={() => navigate("collection")}>{initial}</button><button className="icon-button" aria-label="로그아웃" title="로그아웃" onClick={signOut}><LogOut size={17} /></button></> : <button className="google-login-button" disabled={!authReady} onClick={signIn}><LogIn size={16} /> Google 로그인</button>}{localAdminAccess && <button className="icon-button desktop-settings" aria-label="관리자 설정" onClick={() => navigate("settings")}><Settings2 size={18} /></button>}</div></header>
-    {view === "catalog" && <CatalogView owned={owned} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} setView={navigate} />}{view === "recognize" && <RecognizeView addOwned={addOwned} />}{view === "collection" && <CollectionView owned={owned} toggleOwned={toggleOwned} globalBlur={globalBlur} user={authUser} onSignIn={signIn} />}{view === "settings" && localAdminAccess && <SettingsView globalBlur={globalBlur} setGlobalBlur={setGlobalBlur} />}
-    <footer><Logo /><p>팬이 만들고, 팬이 함께 채우는 오픈 포토카드 아카이브.</p><div><a href="https://rescene.stream/apps/photocards" target="_blank" rel="noreferrer">포카사전</a><a href="https://scene-simulation.github.io/" target="_blank" rel="noreferrer">이벤트 포카</a><a href="https://x.com/bemyzena_" target="_blank" rel="noreferrer">Lip Bomb</a></div><small>자료 출처: 리센느 음원총공팀 포카사전 · 이벤트 포카 Scene Simulation · Lip Bomb 앨범 포카 @bemyzena_ · Pulse 포카 MaxKim. 인식: XFeat (Apache-2.0). RESCENE 및 포토카드 권리는 각 권리자에게 있습니다.</small></footer>{toast && <div className="toast"><Check size={16} /> {toast}</div>}
+    {view === "catalog" && <CatalogView owned={owned} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} setView={navigate} localAdminAccess={localAdminAccess} />}{view === "recognize" && <RecognizeView addOwned={addOwned} />}{view === "collection" && <CollectionView owned={owned} toggleOwned={toggleOwned} globalBlur={globalBlur} user={authUser} onSignIn={signIn} />}{view === "settings" && localAdminAccess && <SettingsView globalBlur={globalBlur} setGlobalBlur={setGlobalBlur} />}
+    <footer><Logo /><p>팬이 만들고, 팬이 함께 채우는 오픈 포토카드 아카이브.</p><small>자료 출처: 리센느 음원총공팀 포카사전 · 이벤트 포카 Scene Simulation · Lip Bomb 앨범 포카 @bemyzena_ · Pulse 포카 MaxKim. 인식: XFeat (Apache-2.0). RESCENE 및 포토카드 권리는 각 권리자에게 있습니다.</small></footer>{toast && <div className="toast"><Check size={16} /> {toast}</div>}
   </main>;
 }
