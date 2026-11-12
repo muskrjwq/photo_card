@@ -8,6 +8,8 @@
   "scripts": {
     "install:ci": "node scripts/install-ci.mjs",
     "catalog:generate": "node scripts/generate-rescene-catalog.mjs",
+    "catalog:normalize-ids": "node scripts/normalize-series-ids.mjs",
+    "catalog:validate-ids": "node scripts/validate-series-ids.mjs",
     "recognition:index": "node scripts/generate-xfeat-index.mjs",
     "dev": "npm run catalog:generate && node scripts/run-framework.mjs dev",
     "build": "npm run catalog:generate && node scripts/run-framework.mjs build",

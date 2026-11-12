@@ -31,14 +31,46 @@ function CardArtwork({ card, blurred = false, priority = false }: { card: Catalo
   </div>;
 }
 
-function PhotoCard({ card, owned, onToggle, globalBlur }: { card: CatalogCard; owned: boolean; onToggle: () => void; globalBlur: boolean }) {
-  return <article className="photo-card">
+function PhotoCard({ card, owned, onToggle, onOpen, globalBlur }: { card: CatalogCard; owned: boolean; onToggle: () => void; onOpen: () => void; globalBlur: boolean }) {
+  return <article className="photo-card" role="button" tabIndex={0} aria-label={`${card.member} ${card.name} 상세보기`} onClick={onOpen} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}>
     <CardArtwork card={card} blurred={(globalBlur && !owned) || card.sensitive} />
     <div className="card-copy"><div><span className="member-chip">{card.member}</span>{card.rare && <span className="rare-chip">RARE</span>}</div>
       <h3>{card.name}</h3><p>{card.collection}</p>
-      <div className="card-bottom"><span className="owned-count"><Users size={13} /> {card.owners.toLocaleString()}명 소장</span><button className={`own-button ${owned ? "owned" : ""}`} onClick={onToggle}>{owned ? <Check size={15} strokeWidth={3} /> : <Plus size={15} strokeWidth={2.5} />}</button></div>
+      <div className="card-bottom"><span className="owned-count"><Users size={13} /> {card.owners.toLocaleString()}명 소장</span><button className={`own-button ${owned ? "owned" : ""}`} aria-label={owned ? "나의 포카에서 제거" : "나의 포카에 추가"} onClick={(event) => { event.stopPropagation(); onToggle(); }}>{owned ? <Check size={15} strokeWidth={3} /> : <Plus size={15} strokeWidth={2.5} />}</button></div>
     </div>
   </article>;
+}
+
+function CardDetailModal({ card, seriesCards, ownedIds, globalBlur, onToggle, onSelect, onClose }: { card: CatalogCard; seriesCards: CatalogCard[]; ownedIds: string[]; globalBlur: boolean; onToggle: () => void; onSelect: (card: CatalogCard) => void; onClose: () => void }) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", closeOnEscape); };
+  }, [onClose]);
+  const owned = ownedIds.includes(card.id);
+  const relatedCards = seriesCards.filter((item) => item.id !== card.id);
+  const detailTags = card.tags.filter((tag) => tag !== card.member && tag !== card.source && tag !== card.name);
+  return <div className="card-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="card-modal" role="dialog" aria-modal="true" aria-labelledby="card-modal-title">
+      <button className="card-modal-close" aria-label="닫기" onClick={onClose}><X size={20} /></button>
+      <div className="card-modal-main">
+        <div className="card-modal-art"><CardArtwork card={card} blurred={(globalBlur && !owned) || card.sensitive} priority /></div>
+        <div className="card-modal-copy">
+          <div><span className="member-chip">{card.member}</span><span className="detail-category">{card.category === "album" ? "앨범" : "이벤트"}</span></div>
+          <h2 id="card-modal-title">{card.name}</h2>
+          <p className="detail-collection">{card.collection}</p>
+          <dl className="card-detail-list"><div><dt>출처</dt><dd>{card.source}</dd></div><div><dt>소장 현황</dt><dd>{owned ? "내가 소장한 포카" : "미소장 포카"}</dd></div><div><dt>같은 시리즈</dt><dd>{seriesCards.length}장</dd></div></dl>
+          {detailTags.length > 0 && <div className="detail-tags">{detailTags.slice(0, 6).map((tag) => <span key={tag}>{tag}</span>)}</div>}
+          <button className={`detail-own-button ${owned ? "owned" : ""}`} onClick={onToggle}>{owned ? <><Check size={17} /> 나의 포카에서 제거</> : <><Plus size={17} /> 나의 포카에 추가</>}</button>
+        </div>
+      </div>
+      <div className="series-section"><div><span className="section-kicker">SAME SERIES</span><h3>같은 시리즈의 다른 포카</h3><p>같은 콘셉트로 발매된 다른 멤버 포카예요.</p></div>
+        {relatedCards.length > 0 ? <div className="series-card-list">{relatedCards.map((item) => <button key={item.id} onClick={() => onSelect(item)}><CardArtwork card={item} blurred={(globalBlur && !ownedIds.includes(item.id)) || item.sensitive} /><span>{item.member}</span><small>{item.name}</small></button>)}</div> : <div className="series-empty">이 시리즈에는 등록된 다른 멤버 포카가 없어요.</div>}
+      </div>
+    </section>
+  </div>;
 }
 
 function Filters({ member, setMember, collection, setCollection }: { member: string; setMember: (v: string) => void; collection: string; setCollection: (v: string) => void }) {
@@ -54,6 +86,7 @@ function CatalogView({ owned, toggleOwned, globalBlur, setView }: { owned: strin
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(40);
   const [columns, setColumns] = useState(4);
+  const [selectedCard, setSelectedCard] = useState<CatalogCard | null>(null);
   const filtered = useMemo(() => catalogCards.filter((card) =>
     (member === "전체" || card.member === member || (member === "단체" && card.kind === "group") || (member === "유닛" && card.kind === "unit")) &&
     (collection === "모든 앨범 · 이벤트" || card.collection === collection) && `${card.member} ${card.name} ${card.collection} ${card.source}`.toLowerCase().includes(query.toLowerCase())
@@ -73,9 +106,10 @@ function CatalogView({ owned, toggleOwned, globalBlur, setView }: { owned: strin
     </section>
     <section className="catalog-section" id="catalog-grid"><div className="section-heading"><div><span className="section-kicker">PHOTOCARD LIST</span><h2>포카 명부</h2><p>멤버와 앨범을 골라 원하는 포카를 찾아보세요.</p></div><label className="catalog-search"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="포카명, 멤버, 출처 검색" /></label></div>
       <Filters member={member} setMember={setMember} collection={collection} setCollection={setCollection} /><div className="result-bar"><span><strong>{filtered.length}</strong>장의 포카</span><div className="result-controls"><label className="column-slider"><LayoutGrid size={14} /><span>한 줄 <strong>{columns}</strong>장</span><input type="range" min="2" max="8" step="1" value={columns} aria-label={`한 줄에 ${columns}장 표시`} onChange={(event) => changeColumns(Number(event.target.value))} /></label><button><Filter size={14} /> 발매 · 공개 순 <ChevronDown size={13} /></button></div></div>
-      <div className="card-grid" style={{ "--catalog-columns": columns, "--catalog-tablet-columns": Math.min(columns, 4) } as CSSProperties}>{filtered.slice(0, visibleCount).map((card) => <PhotoCard key={card.id} card={card} owned={owned.includes(card.id)} onToggle={() => toggleOwned(card.id)} globalBlur={globalBlur} />)}</div>
+      <div className="card-grid" style={{ "--catalog-columns": columns, "--catalog-tablet-columns": Math.min(columns, 4) } as CSSProperties}>{filtered.slice(0, visibleCount).map((card) => <PhotoCard key={card.id} card={card} owned={owned.includes(card.id)} onToggle={() => toggleOwned(card.id)} onOpen={() => setSelectedCard(card)} globalBlur={globalBlur} />)}</div>
       {visibleCount < filtered.length && <button className="load-more" onClick={() => setVisibleCount((count) => count + 40)}>포카 더 보기 <span>{Math.min(visibleCount, filtered.length)} / {filtered.length}</span></button>}
       {filtered.length === 0 && <div className="empty-state"><Search size={32} /><h3>조건에 맞는 포카가 없어요</h3><p>필터나 검색어를 바꿔보세요.</p></div>}
+      {selectedCard && <CardDetailModal card={selectedCard} seriesCards={catalogCards.filter((card) => card.idNumber === selectedCard.idNumber)} ownedIds={owned} globalBlur={globalBlur} onToggle={() => toggleOwned(selectedCard.id)} onSelect={setSelectedCard} onClose={() => setSelectedCard(null)} />}
     </section>
   </>;
 }

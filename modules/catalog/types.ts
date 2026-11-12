@@ -14,6 +14,7 @@ export interface CatalogCard {
   rare?: boolean;
   sensitive?: boolean;
   tags: string[];
+  idNumber: number;
 }
 
 export interface FeatureFlags {

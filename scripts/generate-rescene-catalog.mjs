@@ -24,8 +24,47 @@ function parseCsv(text) {
   return rows.map((cells) => Object.fromEntries(headers.map((header, index) => [header, cells[index] ?? ""])));
 }
 
-const csvNames = (await readdir(dataDirectory)).filter((name) => name.toLowerCase().endsWith(".csv")).sort();
-const rows = (await Promise.all(csvNames.map(async (name) => parseCsv(await readFile(path.join(dataDirectory, name), "utf8"))))).flat();
+const csvPriority = [
+  "rescene_photocards.csv",
+  "01 Woni_photocards.csv", "02 Liv_photocards.csv", "03 Minami_photocards.csv",
+  "04 May_photocards.csv", "05 Zena_photocards.csv",
+  "pulse_all.csv", "event_photocards.csv",
+];
+const lipBombFiles = new Set(csvPriority.slice(1, 6));
+const memberAliases = new Map([
+  ["원이", ["원이"]], ["리브", ["리브"]], ["미나미", ["미나미"]],
+  ["메이", ["메이", "메갓"]], ["제나", ["제나"]],
+]);
+function escapeRegex(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+function normalizedSeriesName(name, memberName) {
+  let normalized = name.normalize("NFKC").toLocaleLowerCase().trim();
+  for (const alias of memberAliases.get(memberName) ?? []) normalized = normalized.replace(new RegExp(`${escapeRegex(alias)}(?:의)?`, "g"), " ");
+  const tokens = normalized.replace(/[^0-9a-z가-힣]+/g, " ").split(/\s+/).filter(Boolean)
+    .map((token) => token === "모여" ? "모여라" : token).sort((a, b) => a.localeCompare(b, "ko"));
+  return tokens.join(" ") || name.normalize("NFKC").toLocaleLowerCase().trim();
+}
+function seriesKey(row) {
+  const name = row.sourceFile === "pulse_all.csv" ? row.name.normalize("NFKC").toLocaleLowerCase().trim() : normalizedSeriesName(row.name, row.memberName);
+  return `${row.category.normalize("NFKC").trim()}\u0000${name}`;
+}
+
+const csvNames = (await readdir(dataDirectory)).filter((name) => name.toLowerCase().endsWith(".csv")).sort((a, b) => {
+  const aRank = csvPriority.indexOf(a); const bRank = csvPriority.indexOf(b);
+  return (aRank < 0 ? Number.MAX_SAFE_INTEGER : aRank) - (bRank < 0 ? Number.MAX_SAFE_INTEGER : bRank) || a.localeCompare(b);
+});
+const rows = (await Promise.all(csvNames.map(async (fileName) => parseCsv(await readFile(path.join(dataDirectory, fileName), "utf8")).map((row, sourceRowIndex) => ({ ...row, sourceFile: fileName, sourceRowIndex }))))).flat();
+const baseRows = rows.filter((row) => row.sourceFile === "rescene_photocards.csv");
+const baseMax = Math.max(...baseRows.map((row) => Number(row.idNumber)).filter(Number.isFinite));
+const lipBombSeriesCount = Math.max(...[...lipBombFiles].map((fileName) => rows.filter((row) => row.sourceFile === fileName).length));
+let nextSeriesId = baseMax + lipBombSeriesCount + 1;
+const continuingSeries = new Map();
+for (const row of rows) {
+  if (row.sourceFile === "rescene_photocards.csv") continue;
+  if (lipBombFiles.has(row.sourceFile)) { row.idNumber = String(baseMax + row.sourceRowIndex + 1); continue; }
+  const key = seriesKey(row);
+  if (!continuingSeries.has(key)) { continuingSeries.set(key, nextSeriesId); nextSeriesId += 1; }
+  row.idNumber = String(continuingSeries.get(key));
+}
 const imageNames = (await readdir(imageDirectory, { recursive: true })).filter((name) => /\.(png|jpe?g|webp)$/i.test(name));
 const imageById = new Map();
 for (const name of imageNames) {
@@ -84,15 +123,14 @@ for (let index = 0; index < rows.length; index += 1) {
     owners: 0,
     tags: [row.memberName, row.category, row.name],
     memberIndex: Number(row.memberIndex),
-    sourceOrder: Number(row.idNumber),
+    idNumber: Number(row.idNumber),
   });
 }
 
 if (missingImages.length) process.stderr.write(`Skipped ${missingImages.length} cards without images: ${missingImages.join(", ")}\n`);
 
 cards.sort((a, b) => (collectionRank.get(a.collection) ?? Number.MAX_SAFE_INTEGER) - (collectionRank.get(b.collection) ?? Number.MAX_SAFE_INTEGER)
-  || a.sourceOrder - b.sourceOrder || a.memberIndex - b.memberIndex || a.name.localeCompare(b.name));
-cards.forEach((card, index) => { card.idNumber = index + 1; delete card.sourceOrder; });
+  || a.idNumber - b.idNumber || a.memberIndex - b.memberIndex || a.name.localeCompare(b.name));
 const collections = [...new Set(cards.map((card) => card.collection))];
 const members = [...new Set(cards.map((card) => card.member))];
 await writeFile(outputPath, `${JSON.stringify({
