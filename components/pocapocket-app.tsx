@@ -8,6 +8,7 @@ import {
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { catalogCards, collections, members, recognitionXFeatIndex, type CatalogCard } from "@/modules/catalog";
+import { getCatalogChronology } from "@/modules/catalog/chronology";
 import { matchPhotoCard, type MatchResponse } from "@/modules/catalog/xfeat-matcher";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
@@ -17,8 +18,6 @@ type CatalogSort = "release-asc" | "release-desc" | "owners-desc" | "owners-asc"
 const albumCollectionNames = collections.filter((collection) => catalogCards.some((card) => card.collection === collection && card.category === "album"));
 const eventCollectionNames = collections.filter((collection) => !albumCollectionNames.includes(collection));
 const catalogReleaseOrder = new Map(catalogCards.map((card, index) => [card.id, index]));
-const catalogSeriesReleaseOrder = new Map<number, number>();
-catalogCards.forEach((card, index) => { if (!catalogSeriesReleaseOrder.has(card.idNumber)) catalogSeriesReleaseOrder.set(card.idNumber, index); });
 const navItems = [
   { id: "catalog" as View, label: "포카 명부", icon: BookOpen },
   { id: "recognize" as View, label: "포카 찾기", icon: Camera },
@@ -99,11 +98,11 @@ function CatalogView({ owned, ownerCounts, toggleOwned, globalBlur, setView }: {
     );
     return cards.sort((a, b) => {
       const releaseDifference = (catalogReleaseOrder.get(a.id) ?? 0) - (catalogReleaseOrder.get(b.id) ?? 0);
-      const seriesDifference = (catalogSeriesReleaseOrder.get(a.idNumber) ?? 0) - (catalogSeriesReleaseOrder.get(b.idNumber) ?? 0);
-      if (sort === "release-desc") return -seriesDifference || releaseDifference;
+      const chronologyDifference = getCatalogChronology(a) - getCatalogChronology(b);
+      if (sort === "release-desc") return -chronologyDifference || releaseDifference;
       if (sort === "owners-desc") return (ownerCounts[b.id] ?? 0) - (ownerCounts[a.id] ?? 0) || releaseDifference;
       if (sort === "owners-asc") return (ownerCounts[a.id] ?? 0) - (ownerCounts[b.id] ?? 0) || releaseDifference;
-      return releaseDifference;
+      return chronologyDifference || releaseDifference;
     });
   }, [member, collection, query, sort, ownerCounts]);
   useEffect(() => setVisibleCount(40), [member, collection, query, sort]);
