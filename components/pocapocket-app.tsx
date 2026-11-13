@@ -150,6 +150,7 @@ function RecognizeView({ addOwned, revealedIds, globalBlur }: { addOwned: (id: s
   const [notice, setNotice] = useState("");
   const [addingAll, setAddingAll] = useState(false);
   const [addedIds, setAddedIds] = useState<string[]>([]);
+  const [hasCamera, setHasCamera] = useState(false);
 
   const matchedItems = items.filter((item) => item.status === "matched" && item.result);
   const uniqueMatches = Array.from(new Map(matchedItems.map((item) => [item.result!.match.card.id, item.result!.match])).values());
@@ -159,6 +160,24 @@ function RecognizeView({ addOwned, revealedIds, globalBlur }: { addOwned: (id: s
   useEffect(() => () => {
     runIdRef.current += 1;
     previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+  }, []);
+
+  useEffect(() => {
+    const mediaDevices = navigator.mediaDevices;
+    const mobileCaptureFallback = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+    let active = true;
+    const detectCamera = async () => {
+      if (!mediaDevices?.enumerateDevices) { if (active) setHasCamera(mobileCaptureFallback); return; }
+      try {
+        const devices = await mediaDevices.enumerateDevices();
+        if (active) setHasCamera(devices.some((device) => device.kind === "videoinput") || mobileCaptureFallback);
+      } catch {
+        if (active) setHasCamera(mobileCaptureFallback);
+      }
+    };
+    void detectCamera();
+    mediaDevices?.addEventListener?.("devicechange", detectCamera);
+    return () => { active = false; mediaDevices?.removeEventListener?.("devicechange", detectCamera); };
   }, []);
 
   const updateItem = (id: string, patch: Partial<BatchRecognitionItem>) => {
@@ -210,12 +229,12 @@ function RecognizeView({ addOwned, revealedIds, globalBlur }: { addOwned: (id: s
 
   return <section className="tool-page"><div className="tool-intro"><span className="eyebrow"><span /> ON-DEVICE MATCHING</span><h1>여러 장도 한 번에 찾아요</h1><p>최대 10장의 포카 사진을 차례로 분석해 명부에서 찾아드려요.<br />사진은 서버로 전송되지 않고 내 기기에서만 분석됩니다.</p></div>
     <div className="recognizer-shell batch-recognizer"><div className="privacy-pill"><ShieldCheck size={15} /> 100% 기기 내 분석 · 업로드 비용 0원</div>
-      {items.length === 0 ? <div className="drop-zone" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void chooseFiles(event.dataTransfer.files); }}><span className="upload-icon"><ImagePlus size={30} /></span><strong>포카 사진을 올려주세요</strong><span>여러 장을 한꺼번에 선택하면 순서대로 안전하게 분석해요.</span><div className="upload-actions"><button className="camera-button" onClick={() => cameraRef.current?.click()}><Camera size={17} /> 카메라로 촬영</button><button className="gallery-button" onClick={() => inputRef.current?.click()}><Upload size={17} /> 여러 장 선택</button></div><small>JPG, PNG, WEBP · 장당 최대 15MB · 한 번에 최대 10장</small></div> :
+      {items.length === 0 ? <div className="drop-zone" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void chooseFiles(event.dataTransfer.files); }}><span className="upload-icon"><ImagePlus size={30} /></span><strong>포카 사진을 올려주세요</strong><span>여러 장을 한꺼번에 선택하면 순서대로 안전하게 분석해요.</span><div className="upload-actions">{hasCamera && <button className="camera-button" onClick={() => cameraRef.current?.click()}><Camera size={17} /> 카메라로 촬영</button>}<button className="gallery-button" onClick={() => inputRef.current?.click()}><Upload size={17} /> 여러 장 선택</button></div><small>JPG, PNG, WEBP · 장당 최대 15MB · 한 번에 최대 10장</small></div> :
       <div className="batch-results"><div className="batch-toolbar"><div><strong>{isProcessing ? "포카를 분석하고 있어요" : "분석을 마쳤어요"}</strong><span>{finishedCount} / {items.length}장 완료 · {uniqueMatches.length}종 인식</span></div><div><button className="secondary-button" disabled={isProcessing} onClick={() => inputRef.current?.click()}><Upload size={15} /> 다시 선택</button><button className="batch-reset" aria-label="분석 닫기" onClick={reset}><X size={18} /></button></div></div><div className="batch-overall-progress"><span style={{ width: `${items.length ? Math.round(finishedCount / items.length * 100) : 0}%` }} /></div>
         {notice && <p className="batch-notice">{notice}</p>}
         <div className="batch-list">{items.map((item) => { const match = item.result?.match; const isDuplicate = Boolean(match && matchedItems.find((candidate) => candidate.result?.match.card.id === match.card.id)?.id !== item.id); const isAdded = Boolean(match && (addedIds.includes(match.card.id) || revealedIds.includes(match.card.id))); return <article className={`batch-item is-${item.status}`} key={item.id}><div className="batch-source-photo"><Image src={item.previewUrl} alt="분석할 포카 사진" fill unoptimized sizes="120px" />{item.status === "scanning" && <span className="scan-line" />}</div><div className="batch-item-copy"><div className="batch-status"><span>{item.status === "queued" ? "대기" : item.status === "scanning" ? `분석 ${item.progress}%` : item.status === "matched" ? isDuplicate ? "중복 인식" : "인식 완료" : item.status === "unmatched" ? "찾지 못함" : "분석 오류"}</span></div>{match ? <div className="batch-match"><CardArtwork card={match.card} blurred={globalBlur && !revealedIds.includes(match.card.id) && !addedIds.includes(match.card.id)} /><div><span>{match.card.member}</span><strong>{match.card.name}</strong><small>{match.card.collection}</small><em>{Math.round(match.confidence * 100)}% · 특징점 {match.goodMatches}개</em></div><button className={isAdded ? "batch-added" : "secondary-button"} disabled={isAdded || isDuplicate} onClick={() => void addOne(match.card.id)}>{isDuplicate ? "같은 포카" : isAdded ? <><Check size={14} /> 추가됨</> : <><Plus size={14} /> 추가</>}</button></div> : item.status === "scanning" || item.status === "queued" ? <div className="batch-item-progress"><span style={{ width: `${Math.max(item.status === "scanning" ? 6 : 0, item.progress)}%` }} /></div> : <p>{item.status === "unmatched" ? "확실하게 일치하는 포카를 찾지 못했어요." : "이 사진은 분석하지 못했어요. 다른 형식으로 다시 시도해 주세요."}</p>}</div></article>; })}</div>
         {!isProcessing && uniqueMatches.length > 0 && <div className="batch-add-bar"><div><strong>중복 제외 {uniqueMatches.length}장</strong><span>인식된 포카만 나의 포카에 저장합니다.</span></div><button className="primary-button" disabled={addingAll || uniqueMatches.every((match) => addedIds.includes(match.card.id) || revealedIds.includes(match.card.id))} onClick={() => void addAll()}><Plus size={17} /> {addingAll ? "추가하는 중…" : "인식된 포카 모두 추가"}</button></div>}
-      </div>}<input ref={cameraRef} type="file" hidden accept="image/*" capture="environment" onChange={(event) => { void chooseFiles(event.target.files ?? undefined); event.currentTarget.value = ""; }} /><input ref={inputRef} type="file" hidden multiple accept="image/jpeg,image/png,image/webp" onChange={(event) => { void chooseFiles(event.target.files ?? undefined); event.currentTarget.value = ""; }} />
+      </div>}{hasCamera && <input ref={cameraRef} type="file" hidden accept="image/*" capture="environment" onChange={(event) => { void chooseFiles(event.target.files ?? undefined); event.currentTarget.value = ""; }} />}<input ref={inputRef} type="file" hidden multiple accept="image/jpeg,image/png,image/webp" onChange={(event) => { void chooseFiles(event.target.files ?? undefined); event.currentTarget.value = ""; }} />
     </div><div className="recognize-tips"><div><b>01</b><span><strong>카드 전체가 보이게</strong><small>모서리 4개를 프레임 안에 담아주세요.</small></span></div><div><b>02</b><span><strong>반사를 피해 밝게</strong><small>부드러운 자연광이 좋아요.</small></span></div><div><b>03</b><span><strong>기울어져도 괜찮아요</strong><small>자동 원근 보정으로 바로잡아요.</small></span></div></div>
   </section>;
 }
