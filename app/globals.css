@@ -5,10 +5,28 @@
 .album-header-actions { display: flex; gap: 8px; margin-left: auto; }
 .profile-setup { position: relative; }
 .profile-setup-close { position: absolute; top: 16px; right: 16px; z-index: 5; width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid #e5d9d4; color: #675e59; background: white; border-radius: 50%; cursor: pointer; }
+.collection-page .collection-binder { padding: 38px 38px 30px 62px; background: radial-gradient(circle at 82% 8%,rgba(255,255,255,.8),transparent 25%),linear-gradient(135deg,#f4e8ec 0%,#f6efe8 50%,#eee8df 100%); border-color: #ddcfd1; box-shadow: inset 18px 0 28px rgba(84,59,65,.06),0 22px 48px rgba(69,49,45,.1); }
+.collection-card-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 22px 15px; padding-top: 24px; }
+.collection-card-grid .photo-card { height: 100%; background: rgba(255,255,255,.9); box-shadow: 0 8px 20px rgba(72,49,45,.06); }
+.collection-empty { min-height: 360px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 35px; text-align: center; }
+.collection-empty .brand-mark { margin-bottom: 18px; }
+.collection-empty h3 { margin: 0 0 8px; font: 700 22px Georgia,"Noto Serif KR",serif; }
+.collection-empty p { max-width: 390px; margin: 0; color: #8c817b; font-size: 11px; line-height: 1.7; }
+.binder-pagination { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 28px; }
+.binder-pagination button { min-width: 34px; height: 34px; display: grid; place-items: center; padding: 0 8px; border: 1px solid #d8cbc7; color: #756b66; background: rgba(255,255,255,.72); border-radius: 50%; font-size: 10px; font-weight: 800; cursor: pointer; }
+.binder-pagination button:hover:not(:disabled),.binder-pagination button.active { border-color: var(--pink-dark); color: white; background: var(--pink-dark); }
+.binder-pagination button:disabled { opacity: .35; cursor: default; }
 @media (max-width: 640px) {
   .collection-page .album-header-actions { width: 100%; margin: 0; }
   .collection-page .album-header-actions button { flex: 1; }
+  .collection-page .collection-binder { padding: 25px 12px 22px 27px; border-radius: 8px 14px 14px 8px; }
+  .collection-card-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 15px 8px; padding-top: 17px; }
+  .collection-card-grid .photo-card { padding: 6px; }
+  .collection-empty { min-height: 290px; padding: 25px 15px; }
+  .binder-pagination { gap: 4px; margin-top: 22px; }
+  .binder-pagination button { min-width: 31px; height: 31px; padding: 0 6px; }
 }
+@media (min-width: 641px) and (max-width: 900px) { .collection-card-grid { grid-template-columns: repeat(3,minmax(0,1fr)); } }
 
 @utility scrollbar-thin {
   scrollbar-width: thin;

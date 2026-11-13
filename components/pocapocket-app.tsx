@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  ArrowRight, BookOpen, Camera, Check, ChevronDown, CircleHelp, Code2,
+  ArrowRight, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Code2,
   Eye, FilePlus2, Filter, ImagePlus, LayoutGrid, LogIn, LogOut, Menu, Pencil, Plus, Search,
   Settings2, Share2, ShieldCheck, Sparkles, Upload, Users, X,
 } from "lucide-react";
@@ -41,7 +41,7 @@ function PhotoCard({ card, owned, ownerCount, onToggle, onOpen, globalBlur }: { 
     <CardArtwork card={card} blurred={(globalBlur && !owned) || card.sensitive} />
     <div className="card-copy"><div><span className="member-chip">{card.member}</span>{card.rare && <span className="rare-chip">RARE</span>}</div>
       <h3>{card.name}</h3><p>{card.collection}</p>
-      <div className="card-bottom"><span className="owned-count"><Users size={13} /> {ownerCount.toLocaleString()}명 소장</span><button className={`own-button ${owned ? "owned" : ""}`} aria-label={owned ? "나의 포카에서 제거" : "나의 포카에 추가"} onClick={(event) => { event.stopPropagation(); onToggle(); }}>{owned ? <Check size={15} strokeWidth={3} /> : <Plus size={15} strokeWidth={2.5} />}</button></div>
+      <div className="card-bottom"><span className="owned-count"><Users size={13} /> {(owned ? Math.max(1, ownerCount) : ownerCount).toLocaleString()}명 소장</span><button className={`own-button ${owned ? "owned" : ""}`} aria-label={owned ? "나의 포카에서 제거" : "나의 포카에 추가"} onClick={(event) => { event.stopPropagation(); onToggle(); }}>{owned ? <Check size={15} strokeWidth={3} /> : <Plus size={15} strokeWidth={2.5} />}</button></div>
     </div>
   </article>;
 }
@@ -153,13 +153,17 @@ function RecognizeView({ addOwned }: { addOwned: (id: string) => void }) {
   </section>;
 }
 
-function CollectionView({ owned, toggleOwned, globalBlur, user, onSignIn, onEditProfile }: { owned: string[]; toggleOwned: (id: string) => void; globalBlur: boolean; user: AuthUser | null; onSignIn: () => void; onEditProfile?: () => void }) {
+function CollectionView({ owned, ownerCounts, toggleOwned, globalBlur, user, onSignIn, onEditProfile }: { owned: string[]; ownerCounts: Record<string, number>; toggleOwned: (id: string) => void; globalBlur: boolean; user: AuthUser | null; onSignIn: () => void; onEditProfile?: () => void }) {
+  const [page, setPage] = useState(1);
+  const [selectedCard, setSelectedCard] = useState<CatalogCard | null>(null);
   if (!user) return <section className="collection-page auth-required"><div className="auth-card"><span className="brand-mark"><span>p</span></span><h1>나의 포카를 저장해 보세요</h1><p>Google 계정으로 로그인하면 어느 기기에서든 내 포카 앨범을 이어서 볼 수 있어요.</p><button className="google-login-button large" onClick={onSignIn}><LogIn size={18} /> Google로 로그인</button></div></section>;
   const ownedCards = catalogCards.filter((card) => owned.includes(card.id)); const total = catalogCards.length; const percent = Math.round((owned.length / total) * 100);
+  const pageSize = 12; const pageCount = Math.max(1, Math.ceil(ownedCards.length / pageSize)); const currentPage = Math.min(page, pageCount); const pageCards = ownedCards.slice((currentPage - 1) * pageSize, currentPage * pageSize); const pageStart = Math.max(1, Math.min(currentPage - 2, pageCount - 4)); const visiblePages = Array.from({ length: Math.min(5, pageCount) }, (_, index) => pageStart + index);
   const initial = (user.name || user.email || "P").trim().charAt(0).toLocaleUpperCase();
   return <section className="collection-page"><div className="album-header"><div className="profile-avatar">{user.avatarUrl ? <Image src={user.avatarUrl} alt={`${user.name} 프로필 사진`} fill unoptimized sizes="68px" /> : initial}<span>✦</span></div><div><span className="eyebrow"><span /> MY POCKET</span><h1>{user.name}의 포카 앨범</h1><p>좋아하는 순간을 한 장씩 모으는 중 · 공개 앨범</p></div><div className="album-header-actions">{onEditProfile && <button className="secondary-button" onClick={onEditProfile}><Pencil size={16} /> 프로필 수정</button>}<button className="secondary-button"><Share2 size={16} /> 공유하기</button></div></div>
     <div className="collection-stats"><div><strong>{owned.length}</strong><span>보유 포카</span></div><div><strong>{percent}%</strong><span>수집률</span></div><div className="completion"><span>전체 {total}장 중 {owned.length}장</span><div><i style={{ width: `${percent}%` }} /></div></div></div>
-    <div className="binder"><div className="binder-rings">{[1,2,3,4,5].map((n) => <i key={n} />)}</div><div className="binder-top"><div><span className="section-kicker">MY COLLECTION</span><h2>SCENEDROME</h2></div><span>{ownedCards.length} / {total}</span></div><div className="binder-grid">{Array.from({ length: 8 }).map((_, index) => { const card = ownedCards[index]; return card ? <div className="binder-slot filled" key={card.id}><CardArtwork card={card} blurred={globalBlur} /><button onClick={() => toggleOwned(card.id)}><X size={13} /></button></div> : <div className="binder-slot" key={index}><Plus size={21} /><span>비어 있음</span></div>; })}</div><span className="page-number">— 01 —</span></div>
+    <div className="binder collection-binder"><div className="binder-rings">{[1,2,3,4,5].map((n) => <i key={n} />)}</div><div className="binder-top"><div><span className="section-kicker">MY PHOTOCARD BINDER</span><h2>POCA POCKET</h2></div><span>{ownedCards.length} CARDS</span></div>{pageCards.length > 0 ? <div className="collection-card-grid">{pageCards.map((card) => <PhotoCard key={card.id} card={card} owned ownerCount={ownerCounts[card.id] ?? 1} onToggle={() => toggleOwned(card.id)} onOpen={() => setSelectedCard(card)} globalBlur={globalBlur} />)}</div> : <div className="collection-empty"><span className="brand-mark"><span>p</span></span><h3>아직 꽂아둔 포카가 없어요</h3><p>포카 명부에서 소장 버튼을 누르거나 사진으로 포카를 찾아 추가해 보세요.</p></div>}{ownedCards.length > pageSize && <nav className="binder-pagination" aria-label="나의 포카 페이지"><button aria-label="이전 페이지" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}><ChevronLeft size={17} /></button>{visiblePages.map((number) => <button key={number} className={number === currentPage ? "active" : ""} aria-current={number === currentPage ? "page" : undefined} onClick={() => setPage(number)}>{number}</button>)}<button aria-label="다음 페이지" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}><ChevronRight size={17} /></button></nav>}<span className="page-number">— {String(currentPage).padStart(2, "0")} / {String(pageCount).padStart(2, "0")} —</span></div>
+    {selectedCard && <CardDetailModal card={selectedCard} seriesCards={catalogCards.filter((card) => card.idNumber === selectedCard.idNumber)} ownedIds={owned} globalBlur={globalBlur} onToggle={() => toggleOwned(selectedCard.id)} onSelect={setSelectedCard} onClose={() => setSelectedCard(null)} />}
   </section>;
 }
 
@@ -198,7 +202,7 @@ export default function PocaPocketApp() {
         loadedProfile = { nickname: profileResult.data.nickname, avatarPath: profileResult.data.avatar_path, avatarUrl: publicAvatar.publicUrl };
         loadedUser = { ...identity.user, name: loadedProfile.nickname, avatarUrl: loadedProfile.avatarUrl };
       }
-      if (active) { setAuthUser(loadedUser); setProfile(loadedProfile); setProfileFeatureReady(!profileResult.error); setIsAdmin(identity.isAdmin); setOwned((data ?? []).map((row) => row.card_id)); setAuthReady(true); }
+      if (active) { const ownedIds = (data ?? []).map((row) => row.card_id); setAuthUser(loadedUser); setProfile(loadedProfile); setProfileFeatureReady(!profileResult.error); setIsAdmin(identity.isAdmin); setOwned(ownedIds); setOwnerCounts((current) => { const next = { ...current }; for (const id of ownedIds) next[id] = Math.max(1, next[id] ?? 0); return next; }); setAuthReady(true); }
     };
     void supabase.auth.getSession().then(({ data }) => applySession(data.session?.access_token));
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -238,13 +242,14 @@ export default function PocaPocketApp() {
       ? await supabase.from("user_cards").delete().eq("user_id", authUser.id).eq("card_id", id)
       : await supabase.from("user_cards").insert({ user_id: authUser.id, card_id: id });
     if (result.error) { setOwned((current) => removing ? [...current, id] : current.filter((item) => item !== id)); setOwnerCounts((current) => ({ ...current, [id]: Math.max(0, (current[id] ?? 0) + (removing ? 1 : -1)) })); showToast("저장하지 못했어요. 잠시 후 다시 시도해 주세요"); }
+    else void supabase.rpc("get_card_owner_counts").then(({ data }) => { const row = data?.find((item) => item.card_id === id); setOwnerCounts((current) => ({ ...current, [id]: Number(row?.owner_count ?? (removing ? 0 : Math.max(1, current[id] ?? 1))) })); });
   };
   const addOwned = async (id: string) => { if (!owned.includes(id)) await toggleOwned(id); if (authUser) showToast("나의 포카에 추가했어요"); };
   const navigate = (next: View) => { if (next === "settings" && !localAdminAccess) return; setView(next); setMobileOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const completeProfile = (nextProfile: UserProfile) => { setProfile(nextProfile); setProfileEditorOpen(false); setAuthUser((current) => current ? { ...current, name: nextProfile.nickname, avatarUrl: nextProfile.avatarUrl } : current); };
   const initial = (authUser?.name || authUser?.email || "P").trim().charAt(0).toLocaleUpperCase();
   return <main><header className="site-header"><button className="mobile-menu" onClick={() => setMobileOpen(!mobileOpen)}>{mobileOpen ? <X /> : <Menu />}</button><button className="logo-button" onClick={() => navigate("catalog")}><Logo /></button><nav className={mobileOpen ? "open" : ""}>{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)}><item.icon size={17} /> {item.label}</button>)}</nav><div className="header-actions">{authUser ? <><button className="profile-button" title={authUser.email ?? authUser.name} onClick={() => navigate("collection")}>{authUser.avatarUrl ? <Image src={authUser.avatarUrl} alt="프로필 사진" fill unoptimized sizes="36px" /> : initial}</button><button className="icon-button" aria-label="로그아웃" title="로그아웃" onClick={signOut}><LogOut size={17} /></button></> : <button className="google-login-button" disabled={!authReady} onClick={signIn}><LogIn size={16} /> Google 로그인</button>}{localAdminAccess && <button className="icon-button desktop-settings" aria-label="관리자 설정" onClick={() => navigate("settings")}><Settings2 size={18} /></button>}</div></header>
-    {view === "catalog" && <CatalogView owned={owned} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} setView={navigate} localAdminAccess={localAdminAccess} />}{view === "recognize" && <RecognizeView addOwned={addOwned} />}{view === "collection" && <CollectionView owned={owned} toggleOwned={toggleOwned} globalBlur={globalBlur} user={authUser} onSignIn={signIn} onEditProfile={profileFeatureReady && profile ? () => setProfileEditorOpen(true) : undefined} />}{view === "settings" && localAdminAccess && <SettingsView globalBlur={globalBlur} setGlobalBlur={setGlobalBlur} />}
+    {view === "catalog" && <CatalogView owned={owned} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} setView={navigate} localAdminAccess={localAdminAccess} />}{view === "recognize" && <RecognizeView addOwned={addOwned} />}{view === "collection" && <CollectionView owned={owned} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} user={authUser} onSignIn={signIn} onEditProfile={profileFeatureReady && profile ? () => setProfileEditorOpen(true) : undefined} />}{view === "settings" && localAdminAccess && <SettingsView globalBlur={globalBlur} setGlobalBlur={setGlobalBlur} />}
     <footer><Logo /><p>팬이 만들고, 팬이 함께 채우는 오픈 포토카드 아카이브.</p><small>자료 출처: 리센느 음원총공팀 포카사전 · 이벤트 포카 Scene Simulation · Lip Bomb 앨범 포카 @bemyzena_ · Pulse 포카 MaxKim. 인식: XFeat (Apache-2.0). RESCENE 및 포토카드 권리는 각 권리자에게 있습니다.</small></footer>{authUser && profileFeatureReady && (!profile || profileEditorOpen) && <ProfileSetup userId={authUser.id} currentProfile={profile} onComplete={completeProfile} onSignOut={signOut} onCancel={profile ? () => setProfileEditorOpen(false) : undefined} />}{toast && <div className="toast"><Check size={16} /> {toast}</div>}
   </main>;
 }
