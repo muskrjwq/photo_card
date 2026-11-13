@@ -40,7 +40,16 @@ function specificEventDate(card: Pick<CatalogCard, "collection" | "name">) {
   return null;
 }
 
+function specificSequence(card: Pick<CatalogCard, "collection" | "name">) {
+  const pulseRelease = Date.parse(`${collectionDates.Pulse}T00:00:00+09:00`);
+  if (card.collection === "기타" && card.name === "성수 팝업") return pulseRelease + 1;
+  if (card.collection === "도미노스" && card.name === "도미노스 시즌2") return pulseRelease + 2;
+  return null;
+}
+
 export function getCatalogChronology(card: Pick<CatalogCard, "collection" | "name">) {
+  const sequence = specificSequence(card);
+  if (sequence !== null) return sequence;
   const date = specificEventDate(card) ?? collectionDates[card.collection] ?? "9999-12-31";
   return Date.parse(`${date}T00:00:00+09:00`);
 }
