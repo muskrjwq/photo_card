@@ -36,9 +36,9 @@ function CardArtwork({ card, blurred = false, priority = false }: { card: Catalo
   </div>;
 }
 
-function PhotoCard({ card, owned, ownerCount, onToggle, onOpen, globalBlur }: { card: CatalogCard; owned: boolean; ownerCount: number; onToggle: () => void; onOpen: () => void; globalBlur: boolean }) {
+function PhotoCard({ card, owned, revealed, ownerCount, onToggle, onOpen, globalBlur }: { card: CatalogCard; owned: boolean; revealed: boolean; ownerCount: number; onToggle: () => void; onOpen: () => void; globalBlur: boolean }) {
   return <article className="photo-card" role="button" tabIndex={0} aria-label={`${card.member} ${card.name} 상세보기`} onClick={onOpen} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}>
-    <CardArtwork card={card} blurred={(globalBlur && !owned) || card.sensitive} />
+    <CardArtwork card={card} blurred={(globalBlur && !revealed) || card.sensitive} />
     <div className="card-copy"><div><span className="member-chip">{card.member}</span>{card.rare && <span className="rare-chip">RARE</span>}</div>
       <h3>{card.name}</h3><p>{card.collection}</p>
       <div className="card-bottom"><span className="owned-count"><Users size={13} /> {(owned ? Math.max(1, ownerCount) : ownerCount).toLocaleString()}명 소장</span><button className={`own-button ${owned ? "owned" : ""}`} aria-label={owned ? "나의 포카에서 제거" : "나의 포카에 추가"} onClick={(event) => { event.stopPropagation(); onToggle(); }}>{owned ? <Check size={15} strokeWidth={3} /> : <Plus size={15} strokeWidth={2.5} />}</button></div>
@@ -46,7 +46,7 @@ function PhotoCard({ card, owned, ownerCount, onToggle, onOpen, globalBlur }: { 
   </article>;
 }
 
-function CardDetailModal({ card, seriesCards, ownedIds, globalBlur, onToggle, onSelect, onEdit, onClose }: { card: CatalogCard; seriesCards: CatalogCard[]; ownedIds: string[]; globalBlur: boolean; onToggle: () => void; onSelect: (card: CatalogCard) => void; onEdit?: () => void; onClose: () => void }) {
+function CardDetailModal({ card, seriesCards, ownedIds, revealedIds, globalBlur, onToggle, onSelect, onEdit, onClose }: { card: CatalogCard; seriesCards: CatalogCard[]; ownedIds: string[]; revealedIds: string[]; globalBlur: boolean; onToggle: () => void; onSelect: (card: CatalogCard) => void; onEdit?: () => void; onClose: () => void }) {
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -61,7 +61,7 @@ function CardDetailModal({ card, seriesCards, ownedIds, globalBlur, onToggle, on
     <section className="card-modal" role="dialog" aria-modal="true" aria-labelledby="card-modal-title">
       <button className="card-modal-close" aria-label="닫기" onClick={onClose}><X size={20} /></button>
       <div className="card-modal-main">
-        <div className="card-modal-art"><CardArtwork card={card} blurred={(globalBlur && !owned) || card.sensitive} priority /></div>
+        <div className="card-modal-art"><CardArtwork card={card} blurred={(globalBlur && !revealedIds.includes(card.id)) || card.sensitive} priority /></div>
         <div className="card-modal-copy">
           <div><span className="member-chip">{card.member}</span><span className="detail-category">{card.category === "album" ? "앨범" : "이벤트"}</span></div>
           <h2 id="card-modal-title">{card.name}</h2>
@@ -72,7 +72,7 @@ function CardDetailModal({ card, seriesCards, ownedIds, globalBlur, onToggle, on
         </div>
       </div>
       <div className="series-section"><div><span className="section-kicker">SAME SERIES</span><h3>같은 시리즈의 다른 포카</h3><p>같은 콘셉트로 발매된 다른 멤버 포카예요.</p></div>
-        {relatedCards.length > 0 ? <div className="series-card-list">{relatedCards.map((item) => <button key={item.id} onClick={() => onSelect(item)}><CardArtwork card={item} blurred={(globalBlur && !ownedIds.includes(item.id)) || item.sensitive} /><span>{item.member}</span><small>{item.name}</small></button>)}</div> : <div className="series-empty">이 시리즈에는 등록된 다른 멤버 포카가 없어요.</div>}
+        {relatedCards.length > 0 ? <div className="series-card-list">{relatedCards.map((item) => <button key={item.id} onClick={() => onSelect(item)}><CardArtwork card={item} blurred={(globalBlur && !revealedIds.includes(item.id)) || item.sensitive} /><span>{item.member}</span><small>{item.name}</small></button>)}</div> : <div className="series-empty">이 시리즈에는 등록된 다른 멤버 포카가 없어요.</div>}
       </div>
     </section>
   </div>;
@@ -85,7 +85,7 @@ function Filters({ member, setMember, collection, setCollection }: { member: str
   </div>;
 }
 
-function CatalogView({ owned, ownerCounts, toggleOwned, globalBlur, setView, localAdminAccess }: { owned: string[]; ownerCounts: Record<string, number>; toggleOwned: (id: string) => void; globalBlur: boolean; setView: (v: View) => void; localAdminAccess: boolean }) {
+function CatalogView({ owned, revealedIds, ownerCounts, toggleOwned, globalBlur, setView, localAdminAccess }: { owned: string[]; revealedIds: string[]; ownerCounts: Record<string, number>; toggleOwned: (id: string) => void; globalBlur: boolean; setView: (v: View) => void; localAdminAccess: boolean }) {
   const [member, setMember] = useState("전체");
   const [collection, setCollection] = useState("모든 앨범 · 이벤트");
   const [query, setQuery] = useState("");
@@ -119,20 +119,20 @@ function CatalogView({ owned, ownerCounts, toggleOwned, globalBlur, setView, loc
   };
   return <>
     <section className="hero"><div><span className="eyebrow"><span /> RESCENE PHOTOCARD ARCHIVE</span><h1><span>리센느의 모든 순간을</span><br /><em>한 장씩, 차곡차곡.</em></h1><p>앨범부터 이벤트 특전까지. 포카를 찾고, 기록하고,<br className="desktop-only" /> 나만의 수집 앨범을 완성해 보세요.</p><div className="hero-actions"><button className="primary-button" onClick={() => setView("recognize")}><Camera size={18} /> 사진으로 포카 찾기</button><button className="text-button" onClick={() => document.getElementById("catalog-grid")?.scrollIntoView({ behavior: "smooth" })}>명부 둘러보기 <ArrowRight size={17} /></button></div></div>
-      <div className="hero-deck" aria-label="포카 예시"><div className="deck-card deck-left"><CardArtwork card={catalogCards[2]} /></div><div className="deck-card deck-center"><CardArtwork card={catalogCards[0]} priority /></div><div className="deck-card deck-right"><CardArtwork card={catalogCards[4]} /></div><span className="spark spark-one">✦</span><span className="spark spark-two">✦</span><span className="deck-note">현재 <strong>{catalogCards.length}</strong>장의 포카가<br />정리되어 있어요</span></div>
+      <div className="hero-deck" aria-label="포카 예시"><div className="deck-card deck-left"><CardArtwork card={catalogCards[2]} blurred={globalBlur && !revealedIds.includes(catalogCards[2].id)} /></div><div className="deck-card deck-center"><CardArtwork card={catalogCards[0]} blurred={globalBlur && !revealedIds.includes(catalogCards[0].id)} priority /></div><div className="deck-card deck-right"><CardArtwork card={catalogCards[4]} blurred={globalBlur && !revealedIds.includes(catalogCards[4].id)} /></div><span className="spark spark-one">✦</span><span className="spark spark-two">✦</span><span className="deck-note">현재 <strong>{catalogCards.length}</strong>장의 포카가<br />정리되어 있어요</span></div>
     </section>
     <section className="catalog-section" id="catalog-grid"><div className="section-heading"><div><span className="section-kicker">PHOTOCARD LIST</span><h2>포카 명부</h2><p>멤버와 앨범을 골라 원하는 포카를 찾아보세요.</p></div><div className="catalog-heading-actions"><label className="catalog-search"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="포카명, 멤버, 출처 검색" /></label>{localAdminAccess && <button className="local-add-button" onClick={() => setEditorCard("new")}><FilePlus2 size={16} /> 새 포카 추가</button>}</div></div>
       <Filters member={member} setMember={setMember} collection={collection} setCollection={setCollection} /><div className="result-bar"><span><strong>{filtered.length}</strong>장의 포카</span><div className="result-controls"><label className="column-slider"><LayoutGrid size={14} /><span>한 줄 <strong>{columns}</strong>장</span><input type="range" min="2" max="8" step="1" value={columns} aria-label={`한 줄에 ${columns}장 표시`} onChange={(event) => changeColumns(Number(event.target.value))} /></label><label className="sort-wrap"><Filter size={14} /><select value={sort} aria-label="포카 정렬 순서" onChange={(event) => setSort(event.target.value as CatalogSort)}><option value="release-asc">발매 · 공개 순</option><option value="release-desc">최신순</option><option value="owners-desc">소장 많은 순</option><option value="owners-asc">소장 적은 순</option></select><ChevronDown size={13} /></label></div></div>
-      <div className="card-grid" style={{ "--catalog-columns": columns, "--catalog-tablet-columns": Math.min(columns, 4) } as CSSProperties}>{filtered.slice(0, visibleCount).map((card) => <PhotoCard key={card.id} card={card} owned={owned.includes(card.id)} ownerCount={ownerCounts[card.id] ?? 0} onToggle={() => toggleOwned(card.id)} onOpen={() => setSelectedCard(card)} globalBlur={globalBlur} />)}</div>
+      <div className="card-grid" style={{ "--catalog-columns": columns, "--catalog-tablet-columns": Math.min(columns, 4) } as CSSProperties}>{filtered.slice(0, visibleCount).map((card) => <PhotoCard key={card.id} card={card} owned={owned.includes(card.id)} revealed={revealedIds.includes(card.id)} ownerCount={ownerCounts[card.id] ?? 0} onToggle={() => toggleOwned(card.id)} onOpen={() => setSelectedCard(card)} globalBlur={globalBlur} />)}</div>
       {visibleCount < filtered.length && <button className="load-more" onClick={() => setVisibleCount((count) => count + 40)}>포카 더 보기 <span>{Math.min(visibleCount, filtered.length)} / {filtered.length}</span></button>}
       {filtered.length === 0 && <div className="empty-state"><Search size={32} /><h3>조건에 맞는 포카가 없어요</h3><p>필터나 검색어를 바꿔보세요.</p></div>}
-      {selectedCard && <CardDetailModal card={selectedCard} seriesCards={catalogCards.filter((card) => card.idNumber === selectedCard.idNumber)} ownedIds={owned} globalBlur={globalBlur} onToggle={() => toggleOwned(selectedCard.id)} onSelect={setSelectedCard} onEdit={localAdminAccess ? () => { setEditorCard(selectedCard); setSelectedCard(null); } : undefined} onClose={() => setSelectedCard(null)} />}
+      {selectedCard && <CardDetailModal card={selectedCard} seriesCards={catalogCards.filter((card) => card.idNumber === selectedCard.idNumber)} ownedIds={owned} revealedIds={revealedIds} globalBlur={globalBlur} onToggle={() => toggleOwned(selectedCard.id)} onSelect={setSelectedCard} onEdit={localAdminAccess ? () => { setEditorCard(selectedCard); setSelectedCard(null); } : undefined} onClose={() => setSelectedCard(null)} />}
       {editorCard && <LocalCardEditor card={editorCard === "new" ? undefined : editorCard} onClose={() => setEditorCard(null)} />}
     </section>
   </>;
 }
 
-function RecognizeView({ addOwned }: { addOwned: (id: string) => void }) {
+function RecognizeView({ addOwned, revealedIds, globalBlur }: { addOwned: (id: string) => void; revealedIds: string[]; globalBlur: boolean }) {
   const inputRef = useRef<HTMLInputElement>(null); const cameraRef = useRef<HTMLInputElement>(null); const [preview, setPreview] = useState<string | null>(null); const [status, setStatus] = useState<"idle" | "scanning" | "done" | "empty" | "error">("idle"); const [result, setResult] = useState<MatchResponse | null>(null); const [progress, setProgress] = useState(0); const match = result?.match ?? null;
   const choose = async (file?: File) => {
     if (!file) return; if (file.size > 15 * 1024 * 1024) { setStatus("error"); return; }
@@ -147,13 +147,13 @@ function RecognizeView({ addOwned }: { addOwned: (id: string) => void }) {
     <div className="recognizer-shell"><div className="privacy-pill"><ShieldCheck size={15} /> 100% 기기 내 분석 · 업로드 비용 0원</div>
       {!preview ? <div className="drop-zone" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); choose(e.dataTransfer.files[0]); }}><span className="upload-icon"><ImagePlus size={30} /></span><strong>포카 사진을 올려주세요</strong><span>정면에 가깝고, 카드 전체가 보이는 사진일수록 정확해요.</span><div className="upload-actions"><button className="camera-button" onClick={() => cameraRef.current?.click()}><Camera size={17} /> 카메라로 촬영</button><button className="gallery-button" onClick={() => inputRef.current?.click()}><Upload size={17} /> 앨범에서 선택</button></div><small>JPG, PNG, WEBP · 최대 15MB</small></div> :
       <div className="scan-layout"><div className="uploaded-photo"><Image src={preview} alt="업로드한 포카" fill unoptimized /><span className={status === "scanning" ? "scan-line" : ""} /><button onClick={reset}><X size={17} /></button></div><div className="scan-result">
-        {status === "scanning" ? <><span className="pulse-logo">p</span><h3>특징을 비교하고 있어요</h3><p>XFeat 특징 추출 · 상호 매칭 · 기하 검증</p><div className="progress"><span style={{ width: `${Math.max(8, progress)}%` }} /></div><small>명부의 {catalogCards.length}장과 로컬에서 비교 중 · {progress}%</small></> : status === "done" && match ? <><span className="match-label is-confident"><Sparkles size={14} /> 일치하는 포카를 찾았어요</span><div className="matched-card"><CardArtwork card={match.card} /><div><span>{match.card.member}</span><h3>{match.card.name}</h3><p>{match.card.collection}</p><strong>{Math.round(match.confidence * 100)}% 비교 점수 · 검증 특징점 {match.goodMatches}개</strong></div></div><div className="match-actions"><button className="primary-button" onClick={() => addOwned(match.card.id)}><Plus size={17} /> 이 포카를 나의 포카에 추가</button><button className="secondary-button" onClick={reset}>다른 사진 찾기</button></div></> : <><span className="empty-match-icon"><Search size={25} /></span><h3>{status === "error" ? "사진을 분석하지 못했어요" : "일치하는 포카가 없어요"}</h3><p>{status === "error" ? "15MB 이하 JPG, PNG, WEBP 파일로 다시 시도해 주세요." : "충분히 확실한 결과를 찾지 못했어요."}</p><div className="match-actions"><button className="primary-button">포카 추가 요청</button><button className="secondary-button" onClick={reset}>다른 사진 찾기</button></div></>}
+        {status === "scanning" ? <><span className="pulse-logo">p</span><h3>특징을 비교하고 있어요</h3><p>XFeat 특징 추출 · 상호 매칭 · 기하 검증</p><div className="progress"><span style={{ width: `${Math.max(8, progress)}%` }} /></div><small>명부의 {catalogCards.length}장과 로컬에서 비교 중 · {progress}%</small></> : status === "done" && match ? <><span className="match-label is-confident"><Sparkles size={14} /> 일치하는 포카를 찾았어요</span><div className="matched-card"><CardArtwork card={match.card} blurred={globalBlur && !revealedIds.includes(match.card.id)} /><div><span>{match.card.member}</span><h3>{match.card.name}</h3><p>{match.card.collection}</p><strong>{Math.round(match.confidence * 100)}% 비교 점수 · 검증 특징점 {match.goodMatches}개</strong></div></div><div className="match-actions"><button className="primary-button" onClick={() => addOwned(match.card.id)}><Plus size={17} /> 이 포카를 나의 포카에 추가</button><button className="secondary-button" onClick={reset}>다른 사진 찾기</button></div></> : <><span className="empty-match-icon"><Search size={25} /></span><h3>{status === "error" ? "사진을 분석하지 못했어요" : "일치하는 포카가 없어요"}</h3><p>{status === "error" ? "15MB 이하 JPG, PNG, WEBP 파일로 다시 시도해 주세요." : "충분히 확실한 결과를 찾지 못했어요."}</p><div className="match-actions"><button className="primary-button">포카 추가 요청</button><button className="secondary-button" onClick={reset}>다른 사진 찾기</button></div></>}
       </div></div>}<input ref={cameraRef} type="file" hidden accept="image/*" capture="environment" onChange={(e) => { choose(e.target.files?.[0]); e.currentTarget.value = ""; }} /><input ref={inputRef} type="file" hidden accept="image/jpeg,image/png,image/webp" onChange={(e) => { choose(e.target.files?.[0]); e.currentTarget.value = ""; }} />
     </div><div className="recognize-tips"><div><b>01</b><span><strong>카드 전체가 보이게</strong><small>모서리 4개를 프레임 안에 담아주세요.</small></span></div><div><b>02</b><span><strong>반사를 피해 밝게</strong><small>부드러운 자연광이 좋아요.</small></span></div><div><b>03</b><span><strong>기울어져도 괜찮아요</strong><small>자동 원근 보정으로 바로잡아요.</small></span></div></div>
   </section>;
 }
 
-function CollectionView({ owned, ownerCounts, toggleOwned, globalBlur, user, onSignIn, onEditProfile }: { owned: string[]; ownerCounts: Record<string, number>; toggleOwned: (id: string) => void; globalBlur: boolean; user: AuthUser | null; onSignIn: () => void; onEditProfile?: () => void }) {
+function CollectionView({ owned, revealedIds, ownerCounts, toggleOwned, globalBlur, user, onSignIn, onEditProfile }: { owned: string[]; revealedIds: string[]; ownerCounts: Record<string, number>; toggleOwned: (id: string) => void; globalBlur: boolean; user: AuthUser | null; onSignIn: () => void; onEditProfile?: () => void }) {
   const [page, setPage] = useState(1);
   const [selectedCard, setSelectedCard] = useState<CatalogCard | null>(null);
   if (!user) return <section className="collection-page auth-required"><div className="auth-card"><span className="brand-mark"><span>p</span></span><h1>나의 포카를 저장해 보세요</h1><p>Google 계정으로 로그인하면 어느 기기에서든 내 포카 앨범을 이어서 볼 수 있어요.</p><button className="google-login-button large" onClick={onSignIn}><LogIn size={18} /> Google로 로그인</button></div></section>;
@@ -162,8 +162,8 @@ function CollectionView({ owned, ownerCounts, toggleOwned, globalBlur, user, onS
   const initial = (user.name || user.email || "P").trim().charAt(0).toLocaleUpperCase();
   return <section className="collection-page"><div className="album-header"><div className="profile-avatar">{user.avatarUrl ? <Image src={user.avatarUrl} alt={`${user.name} 프로필 사진`} fill unoptimized sizes="68px" /> : initial}<span>✦</span></div><div><span className="eyebrow"><span /> MY POCKET</span><h1>{user.name}의 포카 앨범</h1><p>좋아하는 순간을 한 장씩 모으는 중 · 공개 앨범</p></div><div className="album-header-actions">{onEditProfile && <button className="secondary-button" onClick={onEditProfile}><Pencil size={16} /> 프로필 수정</button>}<button className="secondary-button"><Share2 size={16} /> 공유하기</button></div></div>
     <div className="collection-stats"><div><strong>{owned.length}</strong><span>보유 포카</span></div><div><strong>{percent}%</strong><span>수집률</span></div><div className="completion"><span>전체 {total}장 중 {owned.length}장</span><div><i style={{ width: `${percent}%` }} /></div></div></div>
-    <div className="binder collection-binder"><div className="binder-rings">{[1,2,3,4,5].map((n) => <i key={n} />)}</div><div className="binder-top"><div><span className="section-kicker">MY PHOTOCARD BINDER</span><h2>POCA POCKET</h2></div><span>{ownedCards.length} CARDS</span></div>{pageCards.length > 0 ? <div className="collection-card-grid">{pageCards.map((card) => <PhotoCard key={card.id} card={card} owned ownerCount={ownerCounts[card.id] ?? 1} onToggle={() => toggleOwned(card.id)} onOpen={() => setSelectedCard(card)} globalBlur={globalBlur} />)}</div> : <div className="collection-empty"><span className="brand-mark"><span>p</span></span><h3>아직 꽂아둔 포카가 없어요</h3><p>포카 명부에서 소장 버튼을 누르거나 사진으로 포카를 찾아 추가해 보세요.</p></div>}{ownedCards.length > pageSize && <nav className="binder-pagination" aria-label="나의 포카 페이지"><button aria-label="이전 페이지" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}><ChevronLeft size={17} /></button>{visiblePages.map((number) => <button key={number} className={number === currentPage ? "active" : ""} aria-current={number === currentPage ? "page" : undefined} onClick={() => setPage(number)}>{number}</button>)}<button aria-label="다음 페이지" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}><ChevronRight size={17} /></button></nav>}<span className="page-number">— {String(currentPage).padStart(2, "0")} / {String(pageCount).padStart(2, "0")} —</span></div>
-    {selectedCard && <CardDetailModal card={selectedCard} seriesCards={catalogCards.filter((card) => card.idNumber === selectedCard.idNumber)} ownedIds={owned} globalBlur={globalBlur} onToggle={() => toggleOwned(selectedCard.id)} onSelect={setSelectedCard} onClose={() => setSelectedCard(null)} />}
+    <div className="binder collection-binder"><div className="binder-rings">{[1,2,3,4,5].map((n) => <i key={n} />)}</div><div className="binder-top"><div><span className="section-kicker">MY PHOTOCARD BINDER</span><h2>POCA POCKET</h2></div><span>{ownedCards.length} CARDS</span></div>{pageCards.length > 0 ? <div className="collection-card-grid">{pageCards.map((card) => <PhotoCard key={card.id} card={card} owned revealed={revealedIds.includes(card.id)} ownerCount={ownerCounts[card.id] ?? 1} onToggle={() => toggleOwned(card.id)} onOpen={() => setSelectedCard(card)} globalBlur={globalBlur} />)}</div> : <div className="collection-empty"><span className="brand-mark"><span>p</span></span><h3>아직 꽂아둔 포카가 없어요</h3><p>포카 명부에서 소장 버튼을 누르거나 사진으로 포카를 찾아 추가해 보세요.</p></div>}{ownedCards.length > pageSize && <nav className="binder-pagination" aria-label="나의 포카 페이지"><button aria-label="이전 페이지" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}><ChevronLeft size={17} /></button>{visiblePages.map((number) => <button key={number} className={number === currentPage ? "active" : ""} aria-current={number === currentPage ? "page" : undefined} onClick={() => setPage(number)}>{number}</button>)}<button aria-label="다음 페이지" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}><ChevronRight size={17} /></button></nav>}<span className="page-number">— {String(currentPage).padStart(2, "0")} / {String(pageCount).padStart(2, "0")} —</span></div>
+    {selectedCard && <CardDetailModal card={selectedCard} seriesCards={catalogCards.filter((card) => card.idNumber === selectedCard.idNumber)} ownedIds={owned} revealedIds={revealedIds} globalBlur={globalBlur} onToggle={() => toggleOwned(selectedCard.id)} onSelect={setSelectedCard} onClose={() => setSelectedCard(null)} />}
   </section>;
 }
 
@@ -172,13 +172,13 @@ function SettingsView({ globalBlur, setGlobalBlur }: { globalBlur: boolean; setG
   const flagCopy = { recognition: ["사진 인식", "포카 사진 매칭과 촬영 추가"], collections: ["나의 포카", "개인 소장 앨범과 수집률"], publicAlbums: ["공개 앨범", "다른 유저의 앨범 열람"], requests: ["포카 추가 요청", "미인식 포카 관리자 검수 큐"] };
   return <section className="settings-page"><div className="settings-title"><span className="eyebrow"><span /> DEVELOPER CONTROL</span><h1>사이트 설정</h1><p>코드 수정 없이 팬사이트에 필요한 기능만 골라 켜고 끌 수 있어요.</p></div><div className="settings-grid">
     <div className="settings-card"><h2><Settings2 size={19} /> 기능 플래그</h2><p>모든 옵션은 <code>site.config.ts</code>에서도 관리할 수 있습니다.</p>{Object.entries(flagCopy).map(([key, value]) => <label className="setting-row" key={key}><span><strong>{value[0]}</strong><small>{value[1]}</small></span><input type="checkbox" checked={flags[key as keyof typeof flags]} onChange={() => toggle(key as keyof typeof flags)} /><i /></label>)}</div>
-    <div className="settings-card"><h2><Eye size={19} /> 이미지 공개 설정</h2><p>저작권 정책에 맞게 명부 이미지를 일괄 제어합니다.</p><div className="radio-stack"><label><input type="radio" checked={!globalBlur} onChange={() => setGlobalBlur(false)} /><span><b>원본 이미지</b><small>모든 방문자에게 원본을 표시합니다.</small></span></label><label><input type="radio" checked={globalBlur} onChange={() => setGlobalBlur(true)} /><span><b>블러 이미지</b><small>미소장 포카 이미지를 흐리게 표시합니다.</small></span></label></div><div className="info-callout"><CircleHelp size={17} /><span>‘나의 포카’에서 소장 체크된 이미지만 원본으로 보여주는 방식도 지원합니다.</span></div></div>
+    <div className="settings-card"><h2><Eye size={19} /> 이미지 공개 설정</h2><p>저작권 정책에 맞게 명부 이미지를 일괄 제어합니다.</p><div className="radio-stack"><label><input type="radio" checked={!globalBlur} onChange={() => setGlobalBlur(false)} /><span><b>원본 이미지</b><small>모든 방문자에게 원본을 표시합니다.</small></span></label><label><input type="radio" checked={globalBlur} onChange={() => setGlobalBlur(true)} /><span><b>블러 이미지</b><small>사진 인식으로 확인되지 않은 포카를 흐리게 표시합니다.</small></span></label></div><div className="info-callout"><CircleHelp size={17} /><span>사진을 올려 인식한 뒤 나의 포카에 추가하면 해당 카드만 원본으로 보여요.</span></div></div>
     <div className="settings-card wide"><div><h2><Code2 size={19} /> 팬사이트에 명부 인용하기</h2><p>데이터와 명부 UI만 독립적으로 설치하거나, iframe으로 바로 삽입하세요.</p></div><div className="code-box"><span>npm</span><code>npm install @pocapocket/catalog-core</code><button onClick={() => navigator.clipboard?.writeText("npm install @pocapocket/catalog-core")}><Code2 size={15} /></button></div><div className="embed-features"><span><Check size={14} /> UI 테마 변경</span><span><Check size={14} /> JSON/CSV 가져오기</span><span><Check size={14} /> 프레임워크 독립 코어</span><span><Check size={14} /> 자체 호스팅</span></div></div>
   </div></section>;
 }
 
 export default function PocaPocketApp() {
-  const [view, setView] = useState<View>("catalog"); const [owned, setOwned] = useState<string[]>([]); const [ownerCounts, setOwnerCounts] = useState<Record<string, number>>({}); const [globalBlur, setGlobalBlur] = useState(false); const [mobileOpen, setMobileOpen] = useState(false); const [toast, setToast] = useState(""); const [authUser, setAuthUser] = useState<AuthUser | null>(null); const [profile, setProfile] = useState<UserProfile | null>(null); const [profileFeatureReady, setProfileFeatureReady] = useState(false); const [profileEditorOpen, setProfileEditorOpen] = useState(false); const [isAdmin, setIsAdmin] = useState(false); const [authReady, setAuthReady] = useState(false);
+  const [view, setView] = useState<View>("catalog"); const [owned, setOwned] = useState<string[]>([]); const [revealedIds, setRevealedIds] = useState<string[]>([]); const [ownerCounts, setOwnerCounts] = useState<Record<string, number>>({}); const [globalBlur, setGlobalBlur] = useState(true); const [mobileOpen, setMobileOpen] = useState(false); const [toast, setToast] = useState(""); const [authUser, setAuthUser] = useState<AuthUser | null>(null); const [profile, setProfile] = useState<UserProfile | null>(null); const [profileFeatureReady, setProfileFeatureReady] = useState(false); const [profileEditorOpen, setProfileEditorOpen] = useState(false); const [isAdmin, setIsAdmin] = useState(false); const [authReady, setAuthReady] = useState(false);
   const localAdminAccess = process.env.NODE_ENV === "development" && isAdmin;
   const showToast = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 2400); };
 
@@ -187,14 +187,16 @@ export default function PocaPocketApp() {
     if (!supabase) { setAuthReady(true); return; }
     let active = true;
     const applySession = async (accessToken?: string) => {
-      if (!accessToken) { if (active) { setAuthUser(null); setProfile(null); setProfileFeatureReady(false); setProfileEditorOpen(false); setIsAdmin(false); setOwned([]); setAuthReady(true); } return; }
+      if (!accessToken) { if (active) { setAuthUser(null); setProfile(null); setProfileFeatureReady(false); setProfileEditorOpen(false); setIsAdmin(false); setOwned([]); setRevealedIds([]); setAuthReady(true); } return; }
       const identityResponse = await fetch("/api/auth/identity", { headers: { Authorization: `Bearer ${accessToken}` } });
       if (!identityResponse.ok) { if (active) setAuthReady(true); return; }
       const identity = await identityResponse.json() as { user: AuthUser; isAdmin: boolean };
-      const [{ data }, profileResult] = await Promise.all([
-        supabase.from("user_cards").select("card_id"),
+      const [cardsResult, profileResult] = await Promise.all([
+        supabase.from("user_cards").select("card_id, acquisition_method"),
         supabase.from("profiles").select("nickname, avatar_path").eq("id", identity.user.id).maybeSingle(),
       ]);
+      let cardRows = cardsResult.data ?? [];
+      if (cardsResult.error) cardRows = (await supabase.from("user_cards").select("card_id")).data ?? [];
       let loadedProfile: UserProfile | null = null;
       let loadedUser = identity.user;
       if (profileResult.data) {
@@ -202,7 +204,7 @@ export default function PocaPocketApp() {
         loadedProfile = { nickname: profileResult.data.nickname, avatarPath: profileResult.data.avatar_path, avatarUrl: publicAvatar.publicUrl };
         loadedUser = { ...identity.user, name: loadedProfile.nickname, avatarUrl: loadedProfile.avatarUrl };
       }
-      if (active) { const ownedIds = (data ?? []).map((row) => row.card_id); setAuthUser(loadedUser); setProfile(loadedProfile); setProfileFeatureReady(!profileResult.error); setIsAdmin(identity.isAdmin); setOwned(ownedIds); setOwnerCounts((current) => { const next = { ...current }; for (const id of ownedIds) next[id] = Math.max(1, next[id] ?? 0); return next; }); setAuthReady(true); }
+      if (active) { const ownedIds = cardRows.map((row) => row.card_id); const recognizedIds = cardRows.filter((row) => "acquisition_method" in row && row.acquisition_method === "recognized").map((row) => row.card_id); setAuthUser(loadedUser); setProfile(loadedProfile); setProfileFeatureReady(!profileResult.error); setIsAdmin(identity.isAdmin); setOwned(ownedIds); setRevealedIds(recognizedIds); setOwnerCounts((current) => { const next = { ...current }; for (const id of ownedIds) next[id] = Math.max(1, next[id] ?? 0); return next; }); setAuthReady(true); }
     };
     void supabase.auth.getSession().then(({ data }) => applySession(data.session?.access_token));
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -231,25 +233,37 @@ export default function PocaPocketApp() {
     const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin } });
     if (error) showToast("Google 로그인을 시작하지 못했어요");
   };
-  const signOut = async () => { await getSupabaseBrowserClient()?.auth.signOut(); setProfile(null); setProfileFeatureReady(false); setProfileEditorOpen(false); setView("catalog"); };
-  const toggleOwned = async (id: string) => {
+  const signOut = async () => { await getSupabaseBrowserClient()?.auth.signOut(); setProfile(null); setProfileFeatureReady(false); setProfileEditorOpen(false); setRevealedIds([]); setView("catalog"); };
+  const toggleOwned = async (id: string, acquisitionMethod: "manual" | "recognized" = "manual") => {
     const supabase = getSupabaseBrowserClient();
     if (!authUser || !supabase) { await signIn(); return; }
     const removing = owned.includes(id);
+    const wasRevealed = revealedIds.includes(id);
     setOwned((current) => removing ? current.filter((item) => item !== id) : [...current, id]);
+    setRevealedIds((current) => removing ? current.filter((item) => item !== id) : acquisitionMethod === "recognized" ? [...new Set([...current, id])] : current);
     setOwnerCounts((current) => ({ ...current, [id]: Math.max(0, (current[id] ?? 0) + (removing ? -1 : 1)) }));
-    const result = removing
+    let result = removing
       ? await supabase.from("user_cards").delete().eq("user_id", authUser.id).eq("card_id", id)
-      : await supabase.from("user_cards").insert({ user_id: authUser.id, card_id: id });
-    if (result.error) { setOwned((current) => removing ? [...current, id] : current.filter((item) => item !== id)); setOwnerCounts((current) => ({ ...current, [id]: Math.max(0, (current[id] ?? 0) + (removing ? 1 : -1)) })); showToast("저장하지 못했어요. 잠시 후 다시 시도해 주세요"); }
+      : await supabase.from("user_cards").insert({ user_id: authUser.id, card_id: id, ...(acquisitionMethod === "recognized" ? { acquisition_method: "recognized" } : {}) });
+    if (result.error && !removing && acquisitionMethod === "recognized") result = await supabase.from("user_cards").insert({ user_id: authUser.id, card_id: id });
+    if (result.error) { setOwned((current) => removing ? [...current, id] : current.filter((item) => item !== id)); setRevealedIds((current) => wasRevealed ? [...new Set([...current, id])] : current.filter((item) => item !== id)); setOwnerCounts((current) => ({ ...current, [id]: Math.max(0, (current[id] ?? 0) + (removing ? 1 : -1)) })); showToast("저장하지 못했어요. 잠시 후 다시 시도해 주세요"); }
     else void supabase.rpc("get_card_owner_counts").then(({ data }) => { const row = data?.find((item) => item.card_id === id); setOwnerCounts((current) => ({ ...current, [id]: Number(row?.owner_count ?? (removing ? 0 : Math.max(1, current[id] ?? 1))) })); });
   };
-  const addOwned = async (id: string) => { if (!owned.includes(id)) await toggleOwned(id); if (authUser) showToast("나의 포카에 추가했어요"); };
+  const addOwned = async (id: string) => {
+    const supabase = getSupabaseBrowserClient();
+    if (!authUser || !supabase) { await signIn(); return; }
+    if (!owned.includes(id)) await toggleOwned(id, "recognized");
+    else {
+      setRevealedIds((current) => [...new Set([...current, id])]);
+      await supabase.from("user_cards").update({ acquisition_method: "recognized" }).eq("user_id", authUser.id).eq("card_id", id);
+    }
+    showToast("사진으로 확인한 포카를 원본으로 표시해요");
+  };
   const navigate = (next: View) => { if (next === "settings" && !localAdminAccess) return; setView(next); setMobileOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const completeProfile = (nextProfile: UserProfile) => { setProfile(nextProfile); setProfileEditorOpen(false); setAuthUser((current) => current ? { ...current, name: nextProfile.nickname, avatarUrl: nextProfile.avatarUrl } : current); };
   const initial = (authUser?.name || authUser?.email || "P").trim().charAt(0).toLocaleUpperCase();
   return <main><header className="site-header"><button className="mobile-menu" onClick={() => setMobileOpen(!mobileOpen)}>{mobileOpen ? <X /> : <Menu />}</button><button className="logo-button" onClick={() => navigate("catalog")}><Logo /></button><nav className={mobileOpen ? "open" : ""}>{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)}><item.icon size={17} /> {item.label}</button>)}</nav><div className="header-actions">{authUser ? <><button className="profile-button" title={authUser.email ?? authUser.name} onClick={() => navigate("collection")}>{authUser.avatarUrl ? <Image src={authUser.avatarUrl} alt="프로필 사진" fill unoptimized sizes="36px" /> : initial}</button><button className="icon-button" aria-label="로그아웃" title="로그아웃" onClick={signOut}><LogOut size={17} /></button></> : <button className="google-login-button" disabled={!authReady} onClick={signIn}><LogIn size={16} /> Google 로그인</button>}{localAdminAccess && <button className="icon-button desktop-settings" aria-label="관리자 설정" onClick={() => navigate("settings")}><Settings2 size={18} /></button>}</div></header>
-    {view === "catalog" && <CatalogView owned={owned} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} setView={navigate} localAdminAccess={localAdminAccess} />}{view === "recognize" && <RecognizeView addOwned={addOwned} />}{view === "collection" && <CollectionView owned={owned} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} user={authUser} onSignIn={signIn} onEditProfile={profileFeatureReady && profile ? () => setProfileEditorOpen(true) : undefined} />}{view === "settings" && localAdminAccess && <SettingsView globalBlur={globalBlur} setGlobalBlur={setGlobalBlur} />}
+    {view === "catalog" && <CatalogView owned={owned} revealedIds={revealedIds} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} setView={navigate} localAdminAccess={localAdminAccess} />}{view === "recognize" && <RecognizeView addOwned={addOwned} revealedIds={revealedIds} globalBlur={globalBlur} />}{view === "collection" && <CollectionView owned={owned} revealedIds={revealedIds} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} user={authUser} onSignIn={signIn} onEditProfile={profileFeatureReady && profile ? () => setProfileEditorOpen(true) : undefined} />}{view === "settings" && localAdminAccess && <SettingsView globalBlur={globalBlur} setGlobalBlur={setGlobalBlur} />}
     <footer><Logo /><p>팬이 만들고, 팬이 함께 채우는 오픈 포토카드 아카이브.</p><small>자료 출처: 리센느 음원총공팀 포카사전 · 이벤트 포카 Scene Simulation · Lip Bomb 앨범 포카 @bemyzena_ · Pulse 포카 MaxKim. 인식: XFeat (Apache-2.0). RESCENE 및 포토카드 권리는 각 권리자에게 있습니다.</small></footer>{authUser && profileFeatureReady && (!profile || profileEditorOpen) && <ProfileSetup userId={authUser.id} currentProfile={profile} onComplete={completeProfile} onSignOut={signOut} onCancel={profile ? () => setProfileEditorOpen(false) : undefined} />}{toast && <div className="toast"><Check size={16} /> {toast}</div>}
   </main>;
 }
