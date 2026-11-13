@@ -64,11 +64,12 @@ function loadIndex(meta: XFeatMeta) {
   indexCache.set(cacheKey, pending); return pending;
 }
 
-async function fileToTensor(file: File) {
+async function fileToTensor(file: File, rotation: 0 | 180 = 0) {
   const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
   const canvas = document.createElement("canvas"); canvas.width = XFEAT_SIZE; canvas.height = XFEAT_SIZE;
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) throw new Error("Canvas is unavailable");
+  if (rotation === 180) { context.translate(XFEAT_SIZE, XFEAT_SIZE); context.rotate(Math.PI); }
   context.drawImage(bitmap, 0, 0, XFEAT_SIZE, XFEAT_SIZE); bitmap.close();
   const pixels = context.getImageData(0, 0, XFEAT_SIZE, XFEAT_SIZE).data;
   const values = new Float32Array(3 * XFEAT_SIZE * XFEAT_SIZE);
@@ -76,8 +77,8 @@ async function fileToTensor(file: File) {
   return values;
 }
 
-async function extract(file: File, meta: XFeatMeta): Promise<QueryFeatures> {
-  const [ort, session, values] = await Promise.all([getRuntime(), getSession(meta), fileToTensor(file)]);
+async function extract(file: File, meta: XFeatMeta, rotation: 0 | 180 = 0): Promise<QueryFeatures> {
+  const [ort, session, values] = await Promise.all([getRuntime(), getSession(meta), fileToTensor(file, rotation)]);
   return extractXFeat(await session.run({ input: new ort.Tensor("float32", values, [1, 3, XFEAT_SIZE, XFEAT_SIZE]) }), 256);
 }
 
@@ -160,8 +161,8 @@ function compare(query: QueryFeatures, reference: StoredFeatures) {
   return { matches, geometry: verifyGeometry(matches) };
 }
 
-export async function matchPhotoCard(file: File, cards: CatalogCard[], meta: XFeatMeta, onProgress?: (done: number, total: number) => void): Promise<MatchResponse | null> {
-  const [query, stored] = await Promise.all([extract(file, meta), loadIndex(meta)]); onProgress?.(1, 81);
+async function matchQuery(query: QueryFeatures, cards: CatalogCard[], stored: Map<string, StoredFeatures>, onProgress?: (done: number, total: number) => void, progressOffset = 0): Promise<MatchResponse | null> {
+  onProgress?.(progressOffset + 1, 162);
   const shortlist = cards.map(card => ({ card, reference: stored.get(card.id), coarse: stored.has(card.id) ? globalSimilarity(query.global, stored.get(card.id)!.global) : -1 }))
     .filter(item => item.reference).sort((a, b) => b.coarse - a.coarse).slice(0, 80);
   const possible: MatchResult[] = [];
@@ -170,7 +171,7 @@ export async function matchPhotoCard(file: File, cards: CatalogCard[], meta: XFe
     const geometryScore = Math.min(1, inliers / 28) * 0.5 + ratio * 0.3 + Math.min(1, coverage / 0.18) * 0.2;
     const rankingScore = geometryScore * 0.85 + Math.max(0, item.coarse) * 0.15;
     if (inliers >= 7 && ratio >= 0.28 && coverage >= 0.025) possible.push({ card: item.card, confidence: geometryScore, goodMatches: inliers, inlierRatio: ratio, spatialCoverage: coverage, coarseScore: item.coarse, rankingScore });
-    onProgress?.(index + 2, 81); if (index % 4 === 3) await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+    onProgress?.(progressOffset + index + 2, 162); if (index % 4 === 3) await new Promise<void>(resolve => window.setTimeout(resolve, 0));
   }
   const ranked = possible.sort((a, b) => b.rankingScore - a.rankingScore);
   if (!ranked.length) return null;
@@ -178,4 +179,12 @@ export async function matchPhotoCard(file: File, cards: CatalogCard[], meta: XFe
   const margin = primary.rankingScore - (ranked[1]?.rankingScore ?? 0);
   const confident = primary.goodMatches >= 18 && primary.inlierRatio >= 0.45 && primary.spatialCoverage >= 0.06 && margin >= 0.035;
   return confident ? { match: primary } : null;
+}
+
+export async function matchPhotoCard(file: File, cards: CatalogCard[], meta: XFeatMeta, onProgress?: (done: number, total: number) => void): Promise<MatchResponse | null> {
+  const [query, stored] = await Promise.all([extract(file, meta), loadIndex(meta)]);
+  const directMatch = await matchQuery(query, cards, stored, onProgress);
+  if (directMatch) return directMatch;
+  const rotatedQuery = await extract(file, meta, 180);
+  return matchQuery(rotatedQuery, cards, stored, onProgress, 81);
 }

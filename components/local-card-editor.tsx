@@ -84,7 +84,7 @@ export default function LocalCardEditor({ card, onClose }: EditorProps) {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error === "admin_required" ? "관리자 인증에 실패했습니다." : `저장하지 못했습니다: ${result.error ?? response.status}`);
       if (result.recognitionIndexPending) window.alert("저장했습니다. 새 이미지의 인식 특징은 커밋 전에 npm run recognition:index 명령으로 갱신해 주세요.");
-      window.location.reload();
+      onClose();
     } catch (reason) {
       setError(editorErrorMessage(reason, "저장하지 못했습니다. 로컬 편집 서버를 확인해 주세요."));
       setSaving(false);
@@ -110,7 +110,7 @@ export default function LocalCardEditor({ card, onClose }: EditorProps) {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error === "admin_required" ? "관리자 인증에 실패했습니다." : `삭제하지 못했습니다: ${result.error ?? response.status}`);
       window.alert("삭제했습니다. 인식 특징 파일에서도 제거하려면 커밋 전에 npm run recognition:index 명령을 실행해 주세요.");
-      window.location.reload();
+      onClose();
     } catch (reason) {
       setError(editorErrorMessage(reason, "삭제하지 못했습니다. 로컬 편집 서버를 확인해 주세요."));
       setSaving(false);

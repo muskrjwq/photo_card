@@ -112,7 +112,20 @@ function CatalogView({ owned, revealedIds, ownerCounts, toggleOwned, globalBlur,
   useEffect(() => {
     const saved = Number(window.localStorage.getItem("pocapocket.catalogColumns"));
     if (Number.isInteger(saved) && saved >= 2 && saved <= 8) setColumns(saved);
+    const preserved = window.sessionStorage.getItem("pocapocket.catalogEditorState");
+    if (preserved) try {
+      const state = JSON.parse(preserved) as { member?: string; collection?: string; query?: string; visibleCount?: number; sort?: CatalogSort; scrollY?: number };
+      if (state.member) setMember(state.member);
+      if (state.collection) setCollection(state.collection);
+      if (typeof state.query === "string") setQuery(state.query);
+      if (state.sort) setSort(state.sort);
+      window.setTimeout(() => {
+        if (Number.isFinite(state.visibleCount)) setVisibleCount(Math.max(40, Number(state.visibleCount)));
+        window.requestAnimationFrame(() => window.requestAnimationFrame(() => window.scrollTo({ top: Number(state.scrollY) || 0 })));
+      }, 0);
+    } catch { window.sessionStorage.removeItem("pocapocket.catalogEditorState"); }
   }, []);
+  const preserveEditorState = () => window.sessionStorage.setItem("pocapocket.catalogEditorState", JSON.stringify({ member, collection, query, visibleCount, sort, scrollY: window.scrollY }));
   const changeColumns = (value: number) => {
     setColumns(value);
     window.localStorage.setItem("pocapocket.catalogColumns", String(value));
@@ -121,12 +134,12 @@ function CatalogView({ owned, revealedIds, ownerCounts, toggleOwned, globalBlur,
     <section className="hero"><div><span className="eyebrow"><span /> RESCENE PHOTOCARD ARCHIVE</span><h1><span>리센느의 모든 순간을</span><br /><em>한 장씩, 차곡차곡.</em></h1><p>앨범부터 이벤트 특전까지. 포카를 찾고, 기록하고,<br className="desktop-only" /> 나만의 수집 앨범을 완성해 보세요.</p><div className="hero-actions"><button className="primary-button" onClick={() => setView("recognize")}><Camera size={18} /> 사진으로 포카 찾기</button><button className="text-button" onClick={() => document.getElementById("catalog-grid")?.scrollIntoView({ behavior: "smooth" })}>명부 둘러보기 <ArrowRight size={17} /></button></div></div>
       <div className="hero-deck" aria-label="포카 예시"><div className="deck-card deck-left"><CardArtwork card={catalogCards[2]} blurred={globalBlur && !revealedIds.includes(catalogCards[2].id)} /></div><div className="deck-card deck-center"><CardArtwork card={catalogCards[0]} blurred={globalBlur && !revealedIds.includes(catalogCards[0].id)} priority /></div><div className="deck-card deck-right"><CardArtwork card={catalogCards[4]} blurred={globalBlur && !revealedIds.includes(catalogCards[4].id)} /></div><span className="spark spark-one">✦</span><span className="spark spark-two">✦</span><span className="deck-note">현재 <strong>{catalogCards.length}</strong>장의 포카가<br />정리되어 있어요</span></div>
     </section>
-    <section className="catalog-section" id="catalog-grid"><div className="section-heading"><div><span className="section-kicker">PHOTOCARD LIST</span><h2>포카 명부</h2><p>멤버와 앨범을 골라 원하는 포카를 찾아보세요.</p></div><div className="catalog-heading-actions"><label className="catalog-search"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="포카명, 멤버, 출처 검색" /></label>{localAdminAccess && <button className="local-add-button" onClick={() => setEditorCard("new")}><FilePlus2 size={16} /> 새 포카 추가</button>}</div></div>
+    <section className="catalog-section" id="catalog-grid"><div className="section-heading"><div><span className="section-kicker">PHOTOCARD LIST</span><h2>포카 명부</h2><p>멤버와 앨범을 골라 원하는 포카를 찾아보세요.</p></div><div className="catalog-heading-actions"><label className="catalog-search"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="포카명, 멤버, 출처 검색" /></label>{localAdminAccess && <button className="local-add-button" onClick={() => { preserveEditorState(); setEditorCard("new"); }}><FilePlus2 size={16} /> 새 포카 추가</button>}</div></div>
       <Filters member={member} setMember={setMember} collection={collection} setCollection={setCollection} /><div className="result-bar"><span><strong>{filtered.length}</strong>장의 포카</span><div className="result-controls"><label className="column-slider"><LayoutGrid size={14} /><span>한 줄 <strong>{columns}</strong>장</span><input type="range" min="2" max="8" step="1" value={columns} aria-label={`한 줄에 ${columns}장 표시`} onChange={(event) => changeColumns(Number(event.target.value))} /></label><label className="sort-wrap"><Filter size={14} /><select value={sort} aria-label="포카 정렬 순서" onChange={(event) => setSort(event.target.value as CatalogSort)}><option value="release-asc">발매 · 공개 순</option><option value="release-desc">최신순</option><option value="owners-desc">소장 많은 순</option><option value="owners-asc">소장 적은 순</option></select><ChevronDown size={13} /></label></div></div>
       <div className="card-grid" style={{ "--catalog-columns": columns, "--catalog-tablet-columns": Math.min(columns, 4) } as CSSProperties}>{filtered.slice(0, visibleCount).map((card) => <PhotoCard key={card.id} card={card} owned={owned.includes(card.id)} revealed={revealedIds.includes(card.id)} ownerCount={ownerCounts[card.id] ?? 0} onToggle={() => toggleOwned(card.id)} onOpen={() => setSelectedCard(card)} globalBlur={globalBlur} />)}</div>
       {visibleCount < filtered.length && <button className="load-more" onClick={() => setVisibleCount((count) => count + 40)}>포카 더 보기 <span>{Math.min(visibleCount, filtered.length)} / {filtered.length}</span></button>}
       {filtered.length === 0 && <div className="empty-state"><Search size={32} /><h3>조건에 맞는 포카가 없어요</h3><p>필터나 검색어를 바꿔보세요.</p></div>}
-      {selectedCard && <CardDetailModal card={selectedCard} seriesCards={catalogCards.filter((card) => card.idNumber === selectedCard.idNumber)} ownedIds={owned} revealedIds={revealedIds} globalBlur={globalBlur} onToggle={() => toggleOwned(selectedCard.id)} onSelect={setSelectedCard} onEdit={localAdminAccess ? () => { setEditorCard(selectedCard); setSelectedCard(null); } : undefined} onClose={() => setSelectedCard(null)} />}
+      {selectedCard && <CardDetailModal card={selectedCard} seriesCards={catalogCards.filter((card) => card.idNumber === selectedCard.idNumber)} ownedIds={owned} revealedIds={revealedIds} globalBlur={globalBlur} onToggle={() => toggleOwned(selectedCard.id)} onSelect={setSelectedCard} onEdit={localAdminAccess ? () => { preserveEditorState(); setEditorCard(selectedCard); setSelectedCard(null); } : undefined} onClose={() => setSelectedCard(null)} />}
       {editorCard && <LocalCardEditor card={editorCard === "new" ? undefined : editorCard} onClose={() => setEditorCard(null)} />}
     </section>
   </>;
