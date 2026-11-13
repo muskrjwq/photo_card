@@ -3,7 +3,7 @@
 import {
   ArrowRight, BookOpen, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Code2,
   Eye, FilePlus2, Filter, ImagePlus, LayoutGrid, LogIn, LogOut, Menu, Pencil, Plus, Search,
-  Settings2, Share2, ShieldCheck, Sparkles, Upload, Users, X,
+  Settings2, Share2, ShieldCheck, Upload, Users, X,
 } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -132,23 +132,90 @@ function CatalogView({ owned, revealedIds, ownerCounts, toggleOwned, globalBlur,
   </>;
 }
 
-function RecognizeView({ addOwned, revealedIds, globalBlur }: { addOwned: (id: string) => void; revealedIds: string[]; globalBlur: boolean }) {
-  const inputRef = useRef<HTMLInputElement>(null); const cameraRef = useRef<HTMLInputElement>(null); const [preview, setPreview] = useState<string | null>(null); const [status, setStatus] = useState<"idle" | "scanning" | "done" | "empty" | "error">("idle"); const [result, setResult] = useState<MatchResponse | null>(null); const [progress, setProgress] = useState(0); const match = result?.match ?? null;
-  const choose = async (file?: File) => {
-    if (!file) return; if (file.size > 15 * 1024 * 1024) { setStatus("error"); return; }
-    const objectUrl = URL.createObjectURL(file); setPreview(objectUrl); setStatus("scanning"); setResult(null); setProgress(0);
-    try {
-      const result = await matchPhotoCard(file, catalogCards, recognitionXFeatIndex, (done, total) => setProgress(Math.round(done / total * 100)));
-      setResult(result); setStatus(result ? "done" : "empty");
-    } catch (error) { console.error(error); setStatus("error"); }
+type BatchRecognitionItem = {
+  id: string;
+  file: File;
+  previewUrl: string;
+  status: "queued" | "scanning" | "matched" | "unmatched" | "error";
+  progress: number;
+  result: MatchResponse | null;
+};
+
+function RecognizeView({ addOwned, revealedIds, globalBlur }: { addOwned: (id: string, silent?: boolean) => Promise<void>; revealedIds: string[]; globalBlur: boolean }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const previewUrlsRef = useRef<string[]>([]);
+  const runIdRef = useRef(0);
+  const [items, setItems] = useState<BatchRecognitionItem[]>([]);
+  const [notice, setNotice] = useState("");
+  const [addingAll, setAddingAll] = useState(false);
+  const [addedIds, setAddedIds] = useState<string[]>([]);
+
+  const matchedItems = items.filter((item) => item.status === "matched" && item.result);
+  const uniqueMatches = Array.from(new Map(matchedItems.map((item) => [item.result!.match.card.id, item.result!.match])).values());
+  const finishedCount = items.filter((item) => !["queued", "scanning"].includes(item.status)).length;
+  const isProcessing = items.some((item) => item.status === "queued" || item.status === "scanning");
+
+  useEffect(() => () => {
+    runIdRef.current += 1;
+    previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+  }, []);
+
+  const updateItem = (id: string, patch: Partial<BatchRecognitionItem>) => {
+    setItems((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
   };
-  const reset = () => { if (preview) URL.revokeObjectURL(preview); setPreview(null); setStatus("idle"); setResult(null); setProgress(0); };
-  return <section className="tool-page"><div className="tool-intro"><span className="eyebrow"><span /> ON-DEVICE MATCHING</span><h1>이 포카, 어떤 포카일까요?</h1><p>사진 한 장이면 명부에서 가장 비슷한 포카를 찾아드려요.<br />사진은 서버로 전송되지 않고 내 기기에서만 분석됩니다.</p></div>
-    <div className="recognizer-shell"><div className="privacy-pill"><ShieldCheck size={15} /> 100% 기기 내 분석 · 업로드 비용 0원</div>
-      {!preview ? <div className="drop-zone" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); choose(e.dataTransfer.files[0]); }}><span className="upload-icon"><ImagePlus size={30} /></span><strong>포카 사진을 올려주세요</strong><span>정면에 가깝고, 카드 전체가 보이는 사진일수록 정확해요.</span><div className="upload-actions"><button className="camera-button" onClick={() => cameraRef.current?.click()}><Camera size={17} /> 카메라로 촬영</button><button className="gallery-button" onClick={() => inputRef.current?.click()}><Upload size={17} /> 앨범에서 선택</button></div><small>JPG, PNG, WEBP · 최대 15MB</small></div> :
-      <div className="scan-layout"><div className="uploaded-photo"><Image src={preview} alt="업로드한 포카" fill unoptimized /><span className={status === "scanning" ? "scan-line" : ""} /><button onClick={reset}><X size={17} /></button></div><div className="scan-result">
-        {status === "scanning" ? <><span className="pulse-logo">p</span><h3>특징을 비교하고 있어요</h3><p>XFeat 특징 추출 · 상호 매칭 · 기하 검증</p><div className="progress"><span style={{ width: `${Math.max(8, progress)}%` }} /></div><small>명부의 {catalogCards.length}장과 로컬에서 비교 중 · {progress}%</small></> : status === "done" && match ? <><span className="match-label is-confident"><Sparkles size={14} /> 일치하는 포카를 찾았어요</span><div className="matched-card"><CardArtwork card={match.card} blurred={globalBlur && !revealedIds.includes(match.card.id)} /><div><span>{match.card.member}</span><h3>{match.card.name}</h3><p>{match.card.collection}</p><strong>{Math.round(match.confidence * 100)}% 비교 점수 · 검증 특징점 {match.goodMatches}개</strong></div></div><div className="match-actions"><button className="primary-button" onClick={() => addOwned(match.card.id)}><Plus size={17} /> 이 포카를 나의 포카에 추가</button><button className="secondary-button" onClick={reset}>다른 사진 찾기</button></div></> : <><span className="empty-match-icon"><Search size={25} /></span><h3>{status === "error" ? "사진을 분석하지 못했어요" : "일치하는 포카가 없어요"}</h3><p>{status === "error" ? "15MB 이하 JPG, PNG, WEBP 파일로 다시 시도해 주세요." : "충분히 확실한 결과를 찾지 못했어요."}</p><div className="match-actions"><button className="primary-button">포카 추가 요청</button><button className="secondary-button" onClick={reset}>다른 사진 찾기</button></div></>}
-      </div></div>}<input ref={cameraRef} type="file" hidden accept="image/*" capture="environment" onChange={(e) => { choose(e.target.files?.[0]); e.currentTarget.value = ""; }} /><input ref={inputRef} type="file" hidden accept="image/jpeg,image/png,image/webp" onChange={(e) => { choose(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+  const reset = () => {
+    runIdRef.current += 1;
+    previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    previewUrlsRef.current = [];
+    setItems([]); setNotice(""); setAddedIds([]); setAddingAll(false);
+  };
+  const chooseFiles = async (selected?: FileList | File[]) => {
+    if (!selected?.length) return;
+    const files = Array.from(selected).slice(0, 10);
+    const validFiles = files.filter((file) => file.size <= 15 * 1024 * 1024 && (file.type.startsWith("image/") || /\.(jpe?g|png|webp)$/i.test(file.name)));
+    if (!validFiles.length) { setNotice("15MB 이하 JPG, PNG, WEBP 사진을 선택해 주세요."); return; }
+    runIdRef.current += 1;
+    const thisRun = runIdRef.current;
+    previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    const prepared = validFiles.map((file, index) => ({ id: `${thisRun}-${index}`, file, previewUrl: URL.createObjectURL(file), status: "queued" as const, progress: 0, result: null }));
+    previewUrlsRef.current = prepared.map((item) => item.previewUrl);
+    setItems(prepared); setAddedIds([]);
+    setNotice(selected.length > 10 ? "한 번에 최대 10장까지 분석해요. 앞의 10장만 불러왔습니다." : validFiles.length < files.length ? "15MB를 넘거나 지원하지 않는 파일은 제외했습니다." : "");
+    for (const item of prepared) {
+      if (runIdRef.current !== thisRun) break;
+      updateItem(item.id, { status: "scanning", progress: 0 });
+      try {
+        const result = await matchPhotoCard(item.file, catalogCards, recognitionXFeatIndex, (done, total) => {
+          if (runIdRef.current === thisRun) updateItem(item.id, { progress: Math.round(done / total * 100) });
+        });
+        if (runIdRef.current !== thisRun) break;
+        updateItem(item.id, { result, progress: 100, status: result ? "matched" : "unmatched" });
+      } catch (error) {
+        console.error(error);
+        if (runIdRef.current === thisRun) updateItem(item.id, { status: "error", progress: 100 });
+      }
+    }
+  };
+  const addOne = async (id: string, silent = false) => {
+    await addOwned(id, silent);
+    setAddedIds((current) => [...new Set([...current, id])]);
+  };
+  const addAll = async () => {
+    setAddingAll(true);
+    for (const match of uniqueMatches) if (!addedIds.includes(match.card.id)) await addOne(match.card.id, true);
+    setAddingAll(false);
+    setNotice(`중복을 제외한 포카 ${uniqueMatches.length}장을 나의 포카에 추가했어요.`);
+  };
+
+  return <section className="tool-page"><div className="tool-intro"><span className="eyebrow"><span /> ON-DEVICE MATCHING</span><h1>여러 장도 한 번에 찾아요</h1><p>최대 10장의 포카 사진을 차례로 분석해 명부에서 찾아드려요.<br />사진은 서버로 전송되지 않고 내 기기에서만 분석됩니다.</p></div>
+    <div className="recognizer-shell batch-recognizer"><div className="privacy-pill"><ShieldCheck size={15} /> 100% 기기 내 분석 · 업로드 비용 0원</div>
+      {items.length === 0 ? <div className="drop-zone" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void chooseFiles(event.dataTransfer.files); }}><span className="upload-icon"><ImagePlus size={30} /></span><strong>포카 사진을 올려주세요</strong><span>여러 장을 한꺼번에 선택하면 순서대로 안전하게 분석해요.</span><div className="upload-actions"><button className="camera-button" onClick={() => cameraRef.current?.click()}><Camera size={17} /> 카메라로 촬영</button><button className="gallery-button" onClick={() => inputRef.current?.click()}><Upload size={17} /> 여러 장 선택</button></div><small>JPG, PNG, WEBP · 장당 최대 15MB · 한 번에 최대 10장</small></div> :
+      <div className="batch-results"><div className="batch-toolbar"><div><strong>{isProcessing ? "포카를 분석하고 있어요" : "분석을 마쳤어요"}</strong><span>{finishedCount} / {items.length}장 완료 · {uniqueMatches.length}종 인식</span></div><div><button className="secondary-button" disabled={isProcessing} onClick={() => inputRef.current?.click()}><Upload size={15} /> 다시 선택</button><button className="batch-reset" aria-label="분석 닫기" onClick={reset}><X size={18} /></button></div></div><div className="batch-overall-progress"><span style={{ width: `${items.length ? Math.round(finishedCount / items.length * 100) : 0}%` }} /></div>
+        {notice && <p className="batch-notice">{notice}</p>}
+        <div className="batch-list">{items.map((item) => { const match = item.result?.match; const isDuplicate = Boolean(match && matchedItems.find((candidate) => candidate.result?.match.card.id === match.card.id)?.id !== item.id); const isAdded = Boolean(match && (addedIds.includes(match.card.id) || revealedIds.includes(match.card.id))); return <article className={`batch-item is-${item.status}`} key={item.id}><div className="batch-source-photo"><Image src={item.previewUrl} alt="분석할 포카 사진" fill unoptimized sizes="120px" />{item.status === "scanning" && <span className="scan-line" />}</div><div className="batch-item-copy"><div className="batch-status"><span>{item.status === "queued" ? "대기" : item.status === "scanning" ? `분석 ${item.progress}%` : item.status === "matched" ? isDuplicate ? "중복 인식" : "인식 완료" : item.status === "unmatched" ? "찾지 못함" : "분석 오류"}</span></div>{match ? <div className="batch-match"><CardArtwork card={match.card} blurred={globalBlur && !revealedIds.includes(match.card.id) && !addedIds.includes(match.card.id)} /><div><span>{match.card.member}</span><strong>{match.card.name}</strong><small>{match.card.collection}</small><em>{Math.round(match.confidence * 100)}% · 특징점 {match.goodMatches}개</em></div><button className={isAdded ? "batch-added" : "secondary-button"} disabled={isAdded || isDuplicate} onClick={() => void addOne(match.card.id)}>{isDuplicate ? "같은 포카" : isAdded ? <><Check size={14} /> 추가됨</> : <><Plus size={14} /> 추가</>}</button></div> : item.status === "scanning" || item.status === "queued" ? <div className="batch-item-progress"><span style={{ width: `${Math.max(item.status === "scanning" ? 6 : 0, item.progress)}%` }} /></div> : <p>{item.status === "unmatched" ? "확실하게 일치하는 포카를 찾지 못했어요." : "이 사진은 분석하지 못했어요. 다른 형식으로 다시 시도해 주세요."}</p>}</div></article>; })}</div>
+        {!isProcessing && uniqueMatches.length > 0 && <div className="batch-add-bar"><div><strong>중복 제외 {uniqueMatches.length}장</strong><span>인식된 포카만 나의 포카에 저장합니다.</span></div><button className="primary-button" disabled={addingAll || uniqueMatches.every((match) => addedIds.includes(match.card.id) || revealedIds.includes(match.card.id))} onClick={() => void addAll()}><Plus size={17} /> {addingAll ? "추가하는 중…" : "인식된 포카 모두 추가"}</button></div>}
+      </div>}<input ref={cameraRef} type="file" hidden accept="image/*" capture="environment" onChange={(event) => { void chooseFiles(event.target.files ?? undefined); event.currentTarget.value = ""; }} /><input ref={inputRef} type="file" hidden multiple accept="image/jpeg,image/png,image/webp" onChange={(event) => { void chooseFiles(event.target.files ?? undefined); event.currentTarget.value = ""; }} />
     </div><div className="recognize-tips"><div><b>01</b><span><strong>카드 전체가 보이게</strong><small>모서리 4개를 프레임 안에 담아주세요.</small></span></div><div><b>02</b><span><strong>반사를 피해 밝게</strong><small>부드러운 자연광이 좋아요.</small></span></div><div><b>03</b><span><strong>기울어져도 괜찮아요</strong><small>자동 원근 보정으로 바로잡아요.</small></span></div></div>
   </section>;
 }
@@ -249,7 +316,7 @@ export default function PocaPocketApp() {
     if (result.error) { setOwned((current) => removing ? [...current, id] : current.filter((item) => item !== id)); setRevealedIds((current) => wasRevealed ? [...new Set([...current, id])] : current.filter((item) => item !== id)); setOwnerCounts((current) => ({ ...current, [id]: Math.max(0, (current[id] ?? 0) + (removing ? 1 : -1)) })); showToast("저장하지 못했어요. 잠시 후 다시 시도해 주세요"); }
     else void supabase.rpc("get_card_owner_counts").then(({ data }) => { const row = data?.find((item) => item.card_id === id); setOwnerCounts((current) => ({ ...current, [id]: Number(row?.owner_count ?? (removing ? 0 : Math.max(1, current[id] ?? 1))) })); });
   };
-  const addOwned = async (id: string) => {
+  const addOwned = async (id: string, silent = false) => {
     const supabase = getSupabaseBrowserClient();
     if (!authUser || !supabase) { await signIn(); return; }
     if (!owned.includes(id)) await toggleOwned(id, "recognized");
@@ -257,7 +324,7 @@ export default function PocaPocketApp() {
       setRevealedIds((current) => [...new Set([...current, id])]);
       await supabase.from("user_cards").update({ acquisition_method: "recognized" }).eq("user_id", authUser.id).eq("card_id", id);
     }
-    showToast("사진으로 확인한 포카를 원본으로 표시해요");
+    if (!silent) showToast("사진으로 확인한 포카를 원본으로 표시해요");
   };
   const navigate = (next: View) => { if (next === "settings" && !localAdminAccess) return; setView(next); setMobileOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const completeProfile = (nextProfile: UserProfile) => { setProfile(nextProfile); setProfileEditorOpen(false); setAuthUser((current) => current ? { ...current, name: nextProfile.nickname, avatarUrl: nextProfile.avatarUrl } : current); };
