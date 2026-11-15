@@ -280,9 +280,10 @@ export default function PocaPocketApp() {
       const identityResponse = await fetch("/api/auth/identity", { headers: { Authorization: `Bearer ${accessToken}` } });
       if (!identityResponse.ok) { if (active) setAuthReady(true); return; }
       const identity = await identityResponse.json() as { user: AuthUser; isAdmin: boolean };
-      const [cardsResult, profileResult] = await Promise.all([
+      const [cardsResult, profileResult, provenanceResult] = await Promise.all([
         supabase.from("user_cards").select("card_id, acquisition_method"),
         supabase.from("profiles").select("nickname, avatar_path").eq("id", identity.user.id).maybeSingle(),
+        supabase.rpc("card_provenance", { owner_id: identity.user.id }),
       ]);
       let cardRows = cardsResult.data ?? [];
       if (cardsResult.error) cardRows = (await supabase.from("user_cards").select("card_id")).data ?? [];
@@ -294,6 +295,13 @@ export default function PocaPocketApp() {
         loadedUser = { ...identity.user, name: loadedProfile.nickname, avatarUrl: loadedProfile.avatarUrl };
       }
       if (active) { const ownedIds = cardRows.map((row) => row.card_id); const recognizedIds = cardRows.filter((row) => "acquisition_method" in row && row.acquisition_method === "recognized").map((row) => row.card_id); setAuthUser(loadedUser); setProfile(loadedProfile); setProfileFeatureReady(!profileResult.error); setIsAdmin(identity.isAdmin); setOwned(ownedIds); setRevealedIds(recognizedIds); setOwnerCounts((current) => { const next = { ...current }; for (const id of ownedIds) next[id] = Math.max(1, next[id] ?? 0); return next; }); setAuthReady(true); }
+      if (active && !provenanceResult.error) {
+        const ownedIds = new Set(cardRows.map((row) => row.card_id));
+        const drawnIds = (provenanceResult.data ?? [])
+          .filter((row: { card_id: string; drawn: boolean }) => row.drawn && ownedIds.has(row.card_id))
+          .map((row: { card_id: string }) => row.card_id);
+        setRevealedIds((current) => [...new Set([...current, ...drawnIds])]);
+      }
     };
     void supabase.auth.getSession().then(({ data }) => applySession(data.session?.access_token));
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
