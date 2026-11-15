@@ -12,15 +12,17 @@ import { getCatalogChronology } from "@/modules/catalog/chronology";
 import { matchPhotoCard, type MatchResponse } from "@/modules/catalog/xfeat-matcher";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import LocalCardEditor from "@/components/local-card-editor";
+import DailyDraw, { AcquisitionBadge } from "@/components/daily-draw";
 import ProfileSetup, { type UserProfile } from "@/components/profile-setup";
 
-type View = "catalog" | "recognize" | "collection" | "settings";
+type View = "catalog" | "recognize" | "collection" | "settings" | "draw";
 type AuthUser = { id: string; email: string | null; name: string; avatarUrl: string | null };
 type CatalogSort = "release-asc" | "release-desc" | "owners-desc" | "owners-asc";
 const albumCollectionNames = collections.filter((collection) => catalogCards.some((card) => card.collection === collection && card.category === "album"));
 const eventCollectionNames = collections.filter((collection) => !albumCollectionNames.includes(collection));
 const catalogReleaseOrder = new Map(catalogCards.map((card, index) => [card.id, index]));
 const navItems = [
+  { id: "draw" as View, label: "포카 뽑기", icon: Plus },
   { id: "catalog" as View, label: "포카 명부", icon: BookOpen },
   { id: "recognize" as View, label: "포카 찾기", icon: Camera },
   { id: "collection" as View, label: "나의 포카", icon: LayoutGrid },
@@ -39,6 +41,7 @@ function CardArtwork({ card, blurred = false, priority = false }: { card: Catalo
 function PhotoCard({ card, owned, revealed, ownerCount, onToggle, onOpen, globalBlur }: { card: CatalogCard; owned: boolean; revealed: boolean; ownerCount: number; onToggle: () => void; onOpen: () => void; globalBlur: boolean }) {
   return <article className="photo-card" role="button" tabIndex={0} aria-label={`${card.member} ${card.name} 상세보기`} onClick={onOpen} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}>
     <CardArtwork card={card} blurred={(globalBlur && !revealed) || card.sensitive} />
+    {owned && <AcquisitionBadge cardId={card.id} />}
     <div className="card-copy"><div><span className="member-chip">{card.member}</span>{card.rare && <span className="rare-chip">RARE</span>}</div>
       <h3>{card.name}</h3><p>{card.collection}</p>
       <div className="card-bottom"><span className="owned-count"><Users size={13} /> {(owned ? Math.max(1, ownerCount) : ownerCount).toLocaleString()}명 소장</span><button className={`own-button ${owned ? "owned" : ""}`} aria-label={owned ? "나의 포카에서 제거" : "나의 포카에 추가"} onClick={(event) => { event.stopPropagation(); onToggle(); }}>{owned ? <Check size={15} strokeWidth={3} /> : <Plus size={15} strokeWidth={2.5} />}</button></div>
@@ -296,7 +299,9 @@ export default function PocaPocketApp() {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       window.setTimeout(() => void applySession(session?.access_token), 0);
     });
-    return () => { active = false; listener.subscription.unsubscribe(); };
+    const refreshCollection = () => { void supabase.auth.getSession().then(({ data }) => applySession(data.session?.access_token)); };
+    window.addEventListener('pocapocket:collection-updated', refreshCollection);
+    return () => { active = false; listener.subscription.unsubscribe(); window.removeEventListener('pocapocket:collection-updated', refreshCollection); };
   }, []);
 
   useEffect(() => {
@@ -351,5 +356,6 @@ export default function PocaPocketApp() {
   return <main><header className="site-header"><button className="mobile-menu" onClick={() => setMobileOpen(!mobileOpen)}>{mobileOpen ? <X /> : <Menu />}</button><button className="logo-button" onClick={() => navigate("catalog")}><Logo /></button><nav className={mobileOpen ? "open" : ""}>{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)}><item.icon size={17} /> {item.label}</button>)}</nav><div className="header-actions">{authUser ? <><button className="profile-button" title={authUser.email ?? authUser.name} onClick={() => navigate("collection")}>{authUser.avatarUrl ? <Image src={authUser.avatarUrl} alt="프로필 사진" fill unoptimized sizes="36px" /> : initial}</button><button className="icon-button" aria-label="로그아웃" title="로그아웃" onClick={signOut}><LogOut size={17} /></button></> : <button className="google-login-button" disabled={!authReady} onClick={signIn}><LogIn size={16} /> Google 로그인</button>}{localAdminAccess && <button className="icon-button desktop-settings" aria-label="관리자 설정" onClick={() => navigate("settings")}><Settings2 size={18} /></button>}</div></header>
     {view === "catalog" && <CatalogView owned={owned} revealedIds={revealedIds} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} setView={navigate} localAdminAccess={localAdminAccess} />}{view === "recognize" && <RecognizeView addOwned={addOwned} revealedIds={revealedIds} globalBlur={globalBlur} />}{view === "collection" && <CollectionView owned={owned} revealedIds={revealedIds} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} user={authUser} onSignIn={signIn} onEditProfile={profileFeatureReady && profile ? () => setProfileEditorOpen(true) : undefined} />}{view === "settings" && localAdminAccess && <SettingsView globalBlur={globalBlur} setGlobalBlur={setGlobalBlur} />}
     <footer><Logo /><p>팬이 만들고, 팬이 함께 채우는 오픈 포토카드 아카이브.</p><small>자료 출처: 리센느 음원총공팀 포카사전 · 이벤트 포카 Scene Simulation · Lip Bomb 앨범 포카 @bemyzena_ · Pulse 포카 MaxKim. 인식: XFeat (Apache-2.0). RESCENE 및 포토카드 권리는 각 권리자에게 있습니다.</small></footer>{authUser && profileFeatureReady && (!profile || profileEditorOpen) && <ProfileSetup userId={authUser.id} currentProfile={profile} onComplete={completeProfile} onSignOut={signOut} onCancel={profile ? () => setProfileEditorOpen(false) : undefined} />}{toast && <div className="toast"><Check size={16} /> {toast}</div>}
+    {view === "draw" && <DailyDraw />}
   </main>;
 }
