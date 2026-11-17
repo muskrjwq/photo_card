@@ -44,7 +44,7 @@ function PhotoCard({ card, owned, revealed, ownerCount, onToggle, onOpen, global
     {owned && <AcquisitionBadge cardId={card.id} />}
     <div className="card-copy"><div><span className="member-chip">{card.member}</span>{card.rare && <span className="rare-chip">RARE</span>}</div>
       <h3>{card.name}</h3><p>{card.collection}</p>
-      <div className="card-bottom"><span className="owned-count"><Users size={13} /> {(owned ? Math.max(1, ownerCount) : ownerCount).toLocaleString()}명 소장</span><button className={`own-button ${owned ? "owned" : ""}`} aria-label={owned ? "나의 포카에서 제거" : "나의 포카에 추가"} onClick={(event) => { event.stopPropagation(); onToggle(); }}>{owned ? <Check size={15} strokeWidth={3} /> : <Plus size={15} strokeWidth={2.5} />}</button></div>
+      <div className="card-bottom"><span className="owned-count"><Users size={13} /> {(owned ? Math.max(1, ownerCount) : ownerCount).toLocaleString()}명 소장</span>{owned && <button className="own-button owned" aria-label="나의 포카에서 제거" onClick={(event) => { event.stopPropagation(); onToggle(); }}><Check size={15} strokeWidth={3} /></button>}</div>
     </div>
   </article>;
 }
@@ -71,7 +71,7 @@ function CardDetailModal({ card, seriesCards, ownedIds, revealedIds, globalBlur,
           <p className="detail-collection">{card.collection}</p>
           <dl className="card-detail-list"><div><dt>출처</dt><dd>{card.source}</dd></div><div><dt>소장 현황</dt><dd>{owned ? "내가 소장한 포카" : "미소장 포카"}</dd></div><div><dt>같은 시리즈</dt><dd>{seriesCards.length}장</dd></div></dl>
           {detailTags.length > 0 && <div className="detail-tags">{detailTags.slice(0, 6).map((tag) => <span key={tag}>{tag}</span>)}</div>}
-          <div className="detail-actions">{onEdit && <button className="detail-edit-button" onClick={onEdit}><Pencil size={16} /> 편집</button>}<button className={`detail-own-button ${owned ? "owned" : ""}`} onClick={onToggle}>{owned ? <><Check size={17} /> 나의 포카에서 제거</> : <><Plus size={17} /> 나의 포카에 추가</>}</button></div>
+          <div className="detail-actions">{onEdit && <button className="detail-edit-button" onClick={onEdit}><Pencil size={16} /> 편집</button>}{owned && <button className="detail-own-button owned" onClick={onToggle}><Check size={17} /> 나의 포카에서 제거</button>}</div>
         </div>
       </div>
       <div className="series-section"><div><span className="section-kicker">SAME SERIES</span><h3>같은 시리즈의 다른 포카</h3><p>같은 콘셉트로 발매된 다른 멤버 포카예요.</p></div>
