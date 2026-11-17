@@ -15,6 +15,7 @@ export interface CatalogCard {
   sensitive?: boolean;
   tags: string[];
   idNumber: number;
+  addedOrder?: number;
 }
 
 export interface FeatureFlags {

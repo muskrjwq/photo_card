@@ -105,6 +105,10 @@ function CatalogView({ owned, revealedIds, ownerCounts, toggleOwned, globalBlur,
     return cards.sort((a, b) => {
       const releaseDifference = (catalogReleaseOrder.get(a.id) ?? 0) - (catalogReleaseOrder.get(b.id) ?? 0);
       const chronologyDifference = getCatalogChronology(a) - getCatalogChronology(b);
+      if (a.collection === b.collection && (sort === "release-asc" || sort === "release-desc")) {
+        const additionDifference = (a.addedOrder ?? 0) - (b.addedOrder ?? 0);
+        if (additionDifference) return sort === "release-desc" ? -additionDifference : additionDifference;
+      }
       if (sort === "release-desc") return -chronologyDifference || releaseDifference;
       if (sort === "owners-desc") return (ownerCounts[b.id] ?? 0) - (ownerCounts[a.id] ?? 0) || releaseDifference;
       if (sort === "owners-asc") return (ownerCounts[a.id] ?? 0) - (ownerCounts[b.id] ?? 0) || releaseDifference;

@@ -124,6 +124,7 @@ for (let index = 0; index < rows.length; index += 1) {
     tags: [row.memberName, row.category, row.name],
     memberIndex: Number(row.memberIndex),
     idNumber: Number(row.idNumber),
+    addedOrder: row.sourceFile === "local_photocards.csv" ? index + 1 : 0,
   });
 }
 
