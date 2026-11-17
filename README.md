@@ -1,4 +1,4 @@
-# 포카포켓 (PocaPocket)
+# 리센느 포카도감
 
 포토카드 명부, 무료 온디바이스 이미지 인식, 개인 수집 앨범을 한 프로젝트에 담은 오픈소스 팬 툴입니다. 실제 포카 이미지 대신 리센느 예시 메타데이터와 플레이스홀더가 포함되어 있습니다.
 
@@ -51,7 +51,7 @@ npm run recognition:index
 
 ```text
 app/                     웹 진입점과 전역 스타일
-components/              포카포켓 UI
+components/              리센느 포카도감 UI
 modules/catalog/         재사용 가능한 명부 코어
   data.ts                예시 포카/멤버/컬렉션 데이터
   types.ts               공개 데이터 타입
