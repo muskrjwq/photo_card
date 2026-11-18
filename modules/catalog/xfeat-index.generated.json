@@ -1,1 +1,1 @@
-{"urls":["/rescene-xfeat-index-1.bin?v=b807023bcadb","/rescene-xfeat-index-2.bin?v=061be4c37438"],"modelUrl":"/models/xfeat_512x512.onnx?v=1fd5874d8503","version":2,"idSize":12,"descriptorSize":64,"globalSize":1024,"featuresPerCard":144,"cards":2957}
+{"urls":["/rescene-xfeat-index-1.bin?v=7a6c5c70f460","/rescene-xfeat-index-2.bin?v=d91a127ee1f2"],"modelUrl":"/models/xfeat_512x512.onnx?v=1fd5874d8503","version":2,"idSize":12,"descriptorSize":64,"globalSize":1024,"featuresPerCard":144,"cards":3050}
