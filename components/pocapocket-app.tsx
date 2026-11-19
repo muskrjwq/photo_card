@@ -249,7 +249,7 @@ function RecognizeView({ addOwned, revealedIds, globalBlur }: { addOwned: (id: s
   </section>;
 }
 
-function CollectionView({ owned, revealedIds, ownerCounts, toggleOwned, globalBlur, user, onSignIn, onEditProfile }: { owned: string[]; revealedIds: string[]; ownerCounts: Record<string, number>; toggleOwned: (id: string) => void; globalBlur: boolean; user: AuthUser | null; onSignIn: () => void; onEditProfile?: () => void }) {
+function CollectionView({ owned, revealedIds, photoAcquiredCount, drawnCount, ownerCounts, toggleOwned, globalBlur, user, onSignIn, onEditProfile }: { owned: string[]; revealedIds: string[]; photoAcquiredCount: number; drawnCount: number; ownerCounts: Record<string, number>; toggleOwned: (id: string) => void; globalBlur: boolean; user: AuthUser | null; onSignIn: () => void; onEditProfile?: () => void }) {
   const [page, setPage] = useState(1);
   const [member, setMember] = useState("전체");
   const [collection, setCollection] = useState("모든 앨범 · 이벤트");
@@ -281,7 +281,7 @@ function CollectionView({ owned, revealedIds, ownerCounts, toggleOwned, globalBl
   const pageSize = 12; const pageCount = Math.max(1, Math.ceil(filteredCards.length / pageSize)); const currentPage = Math.min(page, pageCount); const pageCards = filteredCards.slice((currentPage - 1) * pageSize, currentPage * pageSize); const pageStart = Math.max(1, Math.min(currentPage - 2, pageCount - 4)); const visiblePages = Array.from({ length: Math.min(5, pageCount) }, (_, index) => pageStart + index);
   const initial = (user.name || user.email || "P").trim().charAt(0).toLocaleUpperCase();
   return <section className="collection-page"><div className="album-header"><div className="profile-avatar">{user.avatarUrl ? <Image src={user.avatarUrl} alt={`${user.name} 프로필 사진`} fill unoptimized sizes="68px" /> : initial}<span>✦</span></div><div><span className="eyebrow"><span /> MY POCKET</span><h1>{user.name}의 포카 앨범</h1><p>좋아하는 순간을 한 장씩 모으는 중 · 공개 앨범</p></div><div className="album-header-actions">{onEditProfile && <button className="secondary-button" onClick={onEditProfile}><Pencil size={16} /> 프로필 수정</button>}<button className="secondary-button"><Share2 size={16} /> 공유하기</button></div></div>
-    <div className="collection-stats"><div><strong>{owned.length}</strong><span>보유 포카</span></div><div><strong>{percent}%</strong><span>수집률</span></div><div className="completion"><span>전체 {total}장 중 {owned.length}장</span><div><i style={{ width: `${percent}%` }} /></div></div></div>
+    <div className="collection-stats"><div><strong>{owned.length}</strong><span>보유 포카</span></div><div><strong>{photoAcquiredCount}</strong><span>사진 획득</span></div><div><strong>{drawnCount}</strong><span>뽑기 획득</span></div><div><strong>{percent}%</strong><span>수집률</span></div><div className="completion"><span>전체 {total}장 중 {owned.length}장</span><div><i style={{ width: `${percent}%` }} /></div></div></div>
     <Filters member={member} setMember={setMember} collection={collection} setCollection={setCollection} cards={ownedCards} /><div className="result-bar"><span><strong>{filteredCards.length}</strong>장의 포카</span><label className="sort-wrap"><Filter size={14} /><select value={sort} aria-label="나의 포카 정렬 순서" onChange={(event) => setSort(event.target.value as CatalogSort)}><option value="release-asc">발매 · 공개 순</option><option value="release-desc">최신순</option><option value="owners-desc">소장 많은 순</option><option value="owners-asc">소장 적은 순</option></select><ChevronDown size={13} /></label></div>
     <div className="binder collection-binder"><div className="binder-rings">{[1,2,3,4,5].map((n) => <i key={n} />)}</div><div className="binder-top"><div><span className="section-kicker">MY PHOTOCARD BINDER</span><h2>POCA POCKET</h2></div><span>{filteredCards.length} CARDS</span></div>{pageCards.length > 0 ? <div className="collection-card-grid">{pageCards.map((card) => <PhotoCard key={card.id} card={card} owned revealed={revealedIds.includes(card.id)} ownerCount={ownerCounts[card.id] ?? 1} onToggle={() => toggleOwned(card.id)} onOpen={() => setSelectedCard(card)} globalBlur={globalBlur} />)}</div> : <div className="collection-empty"><span className="brand-mark"><span>p</span></span><h3>{ownedCards.length ? "조건에 맞는 포카가 없어요" : "아직 꽂아둔 포카가 없어요"}</h3><p>{ownedCards.length ? "필터를 바꿔보세요." : "포카도감에서 소장 버튼을 누르거나 사진으로 포카를 찾아 추가해 보세요."}</p></div>}{filteredCards.length > pageSize && <nav className="binder-pagination" aria-label="나의 포카 페이지"><button aria-label="이전 페이지" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}><ChevronLeft size={17} /></button>{visiblePages.map((number) => <button key={number} className={number === currentPage ? "active" : ""} aria-current={number === currentPage ? "page" : undefined} onClick={() => setPage(number)}>{number}</button>)}<button aria-label="다음 페이지" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}><ChevronRight size={17} /></button></nav>}<span className="page-number">— {String(currentPage).padStart(2, "0")} / {String(pageCount).padStart(2, "0")} —</span></div>
     {selectedCard && <CardDetailModal card={selectedCard} seriesCards={catalogCards.filter((card) => card.idNumber === selectedCard.idNumber)} ownedIds={owned} revealedIds={revealedIds} globalBlur={globalBlur} onToggle={() => toggleOwned(selectedCard.id)} onSelect={setSelectedCard} onClose={() => setSelectedCard(null)} />}
@@ -299,7 +299,7 @@ function SettingsView({ globalBlur, setGlobalBlur }: { globalBlur: boolean; setG
 }
 
 export default function PocaPocketApp() {
-  const [view, setView] = useState<View>("catalog"); const [owned, setOwned] = useState<string[]>([]); const [revealedIds, setRevealedIds] = useState<string[]>([]); const [ownerCounts, setOwnerCounts] = useState<Record<string, number>>({}); const [globalBlur, setGlobalBlur] = useState(true); const [mobileOpen, setMobileOpen] = useState(false); const [toast, setToast] = useState(""); const [authUser, setAuthUser] = useState<AuthUser | null>(null); const [profile, setProfile] = useState<UserProfile | null>(null); const [profileFeatureReady, setProfileFeatureReady] = useState(false); const [profileEditorOpen, setProfileEditorOpen] = useState(false); const [isAdmin, setIsAdmin] = useState(false); const [authReady, setAuthReady] = useState(false);
+  const [view, setView] = useState<View>("catalog"); const [owned, setOwned] = useState<string[]>([]); const [revealedIds, setRevealedIds] = useState<string[]>([]); const [photoAcquiredIds, setPhotoAcquiredIds] = useState<string[]>([]); const [drawnIds, setDrawnIds] = useState<string[]>([]); const [ownerCounts, setOwnerCounts] = useState<Record<string, number>>({}); const [globalBlur, setGlobalBlur] = useState(true); const [mobileOpen, setMobileOpen] = useState(false); const [toast, setToast] = useState(""); const [authUser, setAuthUser] = useState<AuthUser | null>(null); const [profile, setProfile] = useState<UserProfile | null>(null); const [profileFeatureReady, setProfileFeatureReady] = useState(false); const [profileEditorOpen, setProfileEditorOpen] = useState(false); const [isAdmin, setIsAdmin] = useState(false); const [authReady, setAuthReady] = useState(false);
   const localAdminAccess = process.env.NODE_ENV === "development" && isAdmin;
   const showToast = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 2400); };
 
@@ -308,7 +308,7 @@ export default function PocaPocketApp() {
     if (!supabase) { setAuthReady(true); return; }
     let active = true;
     const applySession = async (accessToken?: string) => {
-      if (!accessToken) { if (active) { setAuthUser(null); setProfile(null); setProfileFeatureReady(false); setProfileEditorOpen(false); setIsAdmin(false); setOwned([]); setRevealedIds([]); setAuthReady(true); } return; }
+      if (!accessToken) { if (active) { setAuthUser(null); setProfile(null); setProfileFeatureReady(false); setProfileEditorOpen(false); setIsAdmin(false); setOwned([]); setRevealedIds([]); setPhotoAcquiredIds([]); setDrawnIds([]); setAuthReady(true); } return; }
       const identityResponse = await fetch("/api/auth/identity", { headers: { Authorization: `Bearer ${accessToken}` } });
       if (!identityResponse.ok) { if (active) setAuthReady(true); return; }
       const identity = await identityResponse.json() as { user: AuthUser; isAdmin: boolean };
@@ -326,13 +326,16 @@ export default function PocaPocketApp() {
         loadedProfile = { nickname: profileResult.data.nickname, avatarPath: profileResult.data.avatar_path, avatarUrl: publicAvatar.publicUrl };
         loadedUser = { ...identity.user, name: loadedProfile.nickname, avatarUrl: loadedProfile.avatarUrl };
       }
-      if (active) { const ownedIds = cardRows.map((row) => row.card_id); const recognizedIds = cardRows.filter((row) => "acquisition_method" in row && row.acquisition_method === "recognized").map((row) => row.card_id); setAuthUser(loadedUser); setProfile(loadedProfile); setProfileFeatureReady(!profileResult.error); setIsAdmin(identity.isAdmin); setOwned(ownedIds); setRevealedIds(recognizedIds); setOwnerCounts((current) => { const next = { ...current }; for (const id of ownedIds) next[id] = Math.max(1, next[id] ?? 0); return next; }); setAuthReady(true); }
+      if (active) { const ownedIds = cardRows.map((row) => row.card_id); const recognizedIds = cardRows.filter((row) => "acquisition_method" in row && row.acquisition_method === "recognized").map((row) => row.card_id); setAuthUser(loadedUser); setProfile(loadedProfile); setProfileFeatureReady(!profileResult.error); setIsAdmin(identity.isAdmin); setOwned(ownedIds); setRevealedIds(recognizedIds); setPhotoAcquiredIds(recognizedIds); setDrawnIds([]); setOwnerCounts((current) => { const next = { ...current }; for (const id of ownedIds) next[id] = Math.max(1, next[id] ?? 0); return next; }); setAuthReady(true); }
       if (active && !provenanceResult.error) {
         const ownedIds = new Set(cardRows.map((row) => row.card_id));
-        const drawnIds = (provenanceResult.data ?? [])
+        const provenanceRows = provenanceResult.data ?? [];
+        const photoIds = provenanceRows.filter((row: { card_id: string; photo_verified: boolean }) => row.photo_verified && ownedIds.has(row.card_id)).map((row: { card_id: string }) => row.card_id);
+        const acquiredByDrawIds = provenanceRows
           .filter((row: { card_id: string; drawn: boolean }) => row.drawn && ownedIds.has(row.card_id))
           .map((row: { card_id: string }) => row.card_id);
-        setRevealedIds((current) => [...new Set([...current, ...drawnIds])]);
+        setPhotoAcquiredIds(photoIds); setDrawnIds(acquiredByDrawIds);
+        setRevealedIds((current) => [...new Set([...current, ...acquiredByDrawIds])]);
       }
     };
     void supabase.auth.getSession().then(({ data }) => applySession(data.session?.access_token));
@@ -364,20 +367,24 @@ export default function PocaPocketApp() {
     const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin } });
     if (error) showToast("Google 로그인을 시작하지 못했어요");
   };
-  const signOut = async () => { await getSupabaseBrowserClient()?.auth.signOut(); setProfile(null); setProfileFeatureReady(false); setProfileEditorOpen(false); setRevealedIds([]); setView("catalog"); };
+  const signOut = async () => { await getSupabaseBrowserClient()?.auth.signOut(); setProfile(null); setProfileFeatureReady(false); setProfileEditorOpen(false); setRevealedIds([]); setPhotoAcquiredIds([]); setDrawnIds([]); setView("catalog"); };
   const toggleOwned = async (id: string, acquisitionMethod: "manual" | "recognized" = "manual") => {
     const supabase = getSupabaseBrowserClient();
     if (!authUser || !supabase) { await signIn(); return; }
     const removing = owned.includes(id);
     const wasRevealed = revealedIds.includes(id);
+    const wasPhotoAcquired = photoAcquiredIds.includes(id);
+    const wasDrawn = drawnIds.includes(id);
     setOwned((current) => removing ? current.filter((item) => item !== id) : [...current, id]);
     setRevealedIds((current) => removing ? current.filter((item) => item !== id) : acquisitionMethod === "recognized" ? [...new Set([...current, id])] : current);
+    setPhotoAcquiredIds((current) => removing ? current.filter((item) => item !== id) : acquisitionMethod === "recognized" ? [...new Set([...current, id])] : current);
+    if (removing) setDrawnIds((current) => current.filter((item) => item !== id));
     setOwnerCounts((current) => ({ ...current, [id]: Math.max(0, (current[id] ?? 0) + (removing ? -1 : 1)) }));
     let result = removing
       ? await supabase.from("user_cards").delete().eq("user_id", authUser.id).eq("card_id", id)
       : await supabase.from("user_cards").insert({ user_id: authUser.id, card_id: id, ...(acquisitionMethod === "recognized" ? { acquisition_method: "recognized" } : {}) });
     if (result.error && !removing && acquisitionMethod === "recognized") result = await supabase.from("user_cards").insert({ user_id: authUser.id, card_id: id });
-    if (result.error) { setOwned((current) => removing ? [...current, id] : current.filter((item) => item !== id)); setRevealedIds((current) => wasRevealed ? [...new Set([...current, id])] : current.filter((item) => item !== id)); setOwnerCounts((current) => ({ ...current, [id]: Math.max(0, (current[id] ?? 0) + (removing ? 1 : -1)) })); showToast("저장하지 못했어요. 잠시 후 다시 시도해 주세요"); }
+    if (result.error) { setOwned((current) => removing ? [...current, id] : current.filter((item) => item !== id)); setRevealedIds((current) => wasRevealed ? [...new Set([...current, id])] : current.filter((item) => item !== id)); setPhotoAcquiredIds((current) => wasPhotoAcquired ? [...new Set([...current, id])] : current.filter((item) => item !== id)); setDrawnIds((current) => wasDrawn ? [...new Set([...current, id])] : current.filter((item) => item !== id)); setOwnerCounts((current) => ({ ...current, [id]: Math.max(0, (current[id] ?? 0) + (removing ? 1 : -1)) })); showToast("저장하지 못했어요. 잠시 후 다시 시도해 주세요"); }
     else void supabase.rpc("get_card_owner_counts").then(({ data }) => { const row = data?.find((item) => item.card_id === id); setOwnerCounts((current) => ({ ...current, [id]: Number(row?.owner_count ?? (removing ? 0 : Math.max(1, current[id] ?? 1))) })); });
   };
   const addOwned = async (id: string, silent = false) => {
@@ -386,6 +393,7 @@ export default function PocaPocketApp() {
     if (!owned.includes(id)) await toggleOwned(id, "recognized");
     else {
       setRevealedIds((current) => [...new Set([...current, id])]);
+      setPhotoAcquiredIds((current) => [...new Set([...current, id])]);
       await supabase.from("user_cards").update({ acquisition_method: "recognized" }).eq("user_id", authUser.id).eq("card_id", id);
     }
     if (!silent) showToast("사진으로 확인한 포카를 원본으로 표시해요");
@@ -394,7 +402,7 @@ export default function PocaPocketApp() {
   const completeProfile = (nextProfile: UserProfile) => { setProfile(nextProfile); setProfileEditorOpen(false); setAuthUser((current) => current ? { ...current, name: nextProfile.nickname, avatarUrl: nextProfile.avatarUrl } : current); };
   const initial = (authUser?.name || authUser?.email || "P").trim().charAt(0).toLocaleUpperCase();
   return <main><header className="site-header"><button className="mobile-menu" onClick={() => setMobileOpen(!mobileOpen)}>{mobileOpen ? <X /> : <Menu />}</button><button className="logo-button" onClick={() => navigate("catalog")}><Logo /></button><nav className={mobileOpen ? "open" : ""}>{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)}><item.icon size={17} /> {item.label}</button>)}</nav><div className="header-actions">{authUser ? <><button className="profile-button" title={authUser.email ?? authUser.name} onClick={() => navigate("collection")}>{authUser.avatarUrl ? <Image src={authUser.avatarUrl} alt="프로필 사진" fill unoptimized sizes="36px" /> : initial}</button><button className="icon-button" aria-label="로그아웃" title="로그아웃" onClick={signOut}><LogOut size={17} /></button></> : <button className="google-login-button" disabled={!authReady} onClick={signIn}><LogIn size={16} /> Google 로그인</button>}{localAdminAccess && <button className="icon-button desktop-settings" aria-label="관리자 설정" onClick={() => navigate("settings")}><Settings2 size={18} /></button>}</div></header>
-    {view === "catalog" && <CatalogView owned={owned} revealedIds={revealedIds} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} setView={navigate} localAdminAccess={localAdminAccess} />}{view === "recognize" && <RecognizeView addOwned={addOwned} revealedIds={revealedIds} globalBlur={globalBlur} />}{view === "collection" && <CollectionView owned={owned} revealedIds={revealedIds} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} user={authUser} onSignIn={signIn} onEditProfile={profileFeatureReady && profile ? () => setProfileEditorOpen(true) : undefined} />}{view === "settings" && localAdminAccess && <SettingsView globalBlur={globalBlur} setGlobalBlur={setGlobalBlur} />}
+    {view === "catalog" && <CatalogView owned={owned} revealedIds={revealedIds} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} setView={navigate} localAdminAccess={localAdminAccess} />}{view === "recognize" && <RecognizeView addOwned={addOwned} revealedIds={revealedIds} globalBlur={globalBlur} />}{view === "collection" && <CollectionView owned={owned} revealedIds={revealedIds} photoAcquiredCount={photoAcquiredIds.length} drawnCount={drawnIds.length} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} user={authUser} onSignIn={signIn} onEditProfile={profileFeatureReady && profile ? () => setProfileEditorOpen(true) : undefined} />}{view === "settings" && localAdminAccess && <SettingsView globalBlur={globalBlur} setGlobalBlur={setGlobalBlur} />}
     <footer><Logo /><p>팬이 만들고, 팬이 함께 채우는 오픈 포토카드 아카이브.</p><small>자료 출처: 리센느 음원총공팀 포카사전 · 이벤트 포카 Scene Simulation · Lip Bomb 앨범 포카 @bemyzena_ · Pulse 포카 MaxKim. 인식: XFeat (Apache-2.0). RESCENE 및 포토카드 권리는 각 권리자에게 있습니다.</small></footer>{authUser && profileFeatureReady && (!profile || profileEditorOpen) && <ProfileSetup userId={authUser.id} currentProfile={profile} onComplete={completeProfile} onSignOut={signOut} onCancel={profile ? () => setProfileEditorOpen(false) : undefined} />}{toast && <div className="toast"><Check size={16} /> {toast}</div>}
     {view === "draw" && <DailyDraw />}
   </main>;
