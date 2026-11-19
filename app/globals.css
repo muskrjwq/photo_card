@@ -195,6 +195,8 @@ a { color: inherit; text-decoration: none; }
 .site-header nav button:hover, .site-header nav button.active { color: var(--ink); }
 .site-header nav button.active::after { left: 0; right: 0; }
 .header-actions { justify-self: end; display: flex; align-items: center; gap: 9px; }
+.language-button { min-width: 36px; height: 30px; padding: 0 9px; border: 1px solid var(--line); background: white; border-radius: 999px; color: #6f625d; font-size: 11px; font-weight: 850; cursor: pointer; }
+.language-button:hover { border-color: var(--pink); color: var(--pink-dark); background: #fff8f9; }
 .icon-button, .profile-button, .mobile-menu { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--line); background: white; border-radius: 50%; cursor: pointer; }
 .icon-button:hover { border-color: #d3c7c0; background: #fff8f9; }
 .profile-button { position: relative; overflow: hidden; border: 0; color: white; background: #78998b; font-weight: 800; }.profile-button img { object-fit: cover; }
