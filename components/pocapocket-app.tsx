@@ -10,7 +10,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { catalogCards, collections, members, recognitionXFeatIndex, type CatalogCard } from "@/modules/catalog";
 import { getCatalogChronology } from "@/modules/catalog/chronology";
 import { matchPhotoCard, type MatchResponse } from "@/modules/catalog/xfeat-matcher";
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getSupabaseBrowserClient, initializeSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { I18nProvider, tr, useI18n, type Locale } from "@/lib/i18n";
 import LocalCardEditor from "@/components/local-card-editor";
 import CardRequestQueue from "@/components/card-request-queue";
@@ -368,11 +368,19 @@ export default function PocaPocketApp() {
   };
   const [view, setView] = useState<View>("catalog"); const [owned, setOwned] = useState<string[]>([]); const [revealedIds, setRevealedIds] = useState<string[]>([]); const [photoAcquiredIds, setPhotoAcquiredIds] = useState<string[]>([]); const [drawnIds, setDrawnIds] = useState<string[]>([]); const [ownerCounts, setOwnerCounts] = useState<Record<string, number>>({}); const [globalBlur, setGlobalBlur] = useState(true); const [mobileOpen, setMobileOpen] = useState(false); const [toast, setToast] = useState(""); const [authUser, setAuthUser] = useState<AuthUser | null>(null); const [profile, setProfile] = useState<UserProfile | null>(null); const [profileFeatureReady, setProfileFeatureReady] = useState(false); const [profileEditorOpen, setProfileEditorOpen] = useState(false); const [isAdmin, setIsAdmin] = useState(false); const [authReady, setAuthReady] = useState(false);
   const localAdminAccess = process.env.NODE_ENV === "development" && isAdmin;
+  const [supabase, setSupabase] = useState<ReturnType<typeof getSupabaseBrowserClient>>();
   const showToast = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 2400); };
 
   useEffect(() => {
-    const supabase = getSupabaseBrowserClient();
-    if (!supabase) { setAuthReady(true); return; }
+    let active = true;
+    void initializeSupabaseBrowserClient().then((client) => {
+      if (active) setSupabase(client);
+    });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!supabase) { if (supabase === null) setAuthReady(true); return; }
     let active = true;
     const applySession = async (accessToken?: string) => {
       if (!accessToken) { if (active) { setAuthUser(null); setProfile(null); setProfileFeatureReady(false); setProfileEditorOpen(false); setIsAdmin(false); setOwned([]); setRevealedIds([]); setPhotoAcquiredIds([]); setDrawnIds([]); setAuthReady(true); } return; }
@@ -412,10 +420,9 @@ export default function PocaPocketApp() {
     const refreshCollection = () => { void supabase.auth.getSession().then(({ data }) => applySession(data.session?.access_token)); };
     window.addEventListener('pocapocket:collection-updated', refreshCollection);
     return () => { active = false; listener.subscription.unsubscribe(); window.removeEventListener('pocapocket:collection-updated', refreshCollection); };
-  }, []);
+  }, [supabase]);
 
   useEffect(() => {
-    const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
     let active = true;
     void supabase.rpc("get_card_owner_counts").then(({ data, error }) => {
@@ -424,14 +431,15 @@ export default function PocaPocketApp() {
       setOwnerCounts(counts);
     });
     return () => { active = false; };
-  }, []);
+  }, [supabase]);
 
   useEffect(() => { if (view === "settings" && !localAdminAccess) setView("catalog"); }, [localAdminAccess, view]);
 
   const signIn = async () => {
-    const supabase = getSupabaseBrowserClient();
-    if (!supabase) { showToast(tr(locale, "Supabase 연결 설정이 필요해요", "Supabase connection settings are required")); return; }
-    const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin } });
+    const client = await initializeSupabaseBrowserClient();
+    if (!client) { showToast(tr(locale, "로그인 서비스에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.", "Could not connect to the sign-in service. Please try again.")); return; }
+    setSupabase(client);
+    const { error } = await client.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin } });
     if (error) showToast(tr(locale, "Google 로그인을 시작하지 못했어요", "Could not start Google sign-in"));
   };
   const signOut = async () => { await getSupabaseBrowserClient()?.auth.signOut(); setProfile(null); setProfileFeatureReady(false); setProfileEditorOpen(false); setRevealedIds([]); setPhotoAcquiredIds([]); setDrawnIds([]); setView("catalog"); };
@@ -471,6 +479,6 @@ export default function PocaPocketApp() {
   return <I18nProvider locale={locale}><main><header className="site-header"><button className="mobile-menu" aria-label={tr(locale, "메뉴", "Menu")} onClick={() => setMobileOpen(!mobileOpen)}>{mobileOpen ? <X /> : <Menu />}</button><button className="logo-button" onClick={() => navigate("catalog")}><Logo /></button><nav className={mobileOpen ? "open" : ""}>{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)}><item.icon size={17} /> {tr(locale, item.ko, item.en)}</button>)}</nav><div className="header-actions"><button className="language-button" aria-label={tr(locale, "영어로 변경", "Switch to Korean")} onClick={toggleLocale}>{locale === "ko" ? "EN" : "한국어"}</button>{authUser ? <><button className="profile-button" title={authUser.email ?? authUser.name} onClick={() => navigate("collection")}>{authUser.avatarUrl ? <Image src={authUser.avatarUrl} alt={tr(locale, "프로필 사진", "Profile picture")} fill unoptimized sizes="36px" /> : initial}</button><button className="icon-button" aria-label={tr(locale, "로그아웃", "Sign out")} title={tr(locale, "로그아웃", "Sign out")} onClick={signOut}><LogOut size={17} /></button></> : <button className="google-login-button" disabled={!authReady} onClick={signIn}><LogIn size={16} /> {tr(locale, "Google 로그인", "Sign in with Google")}</button>}{localAdminAccess && <button className="icon-button desktop-settings" aria-label={tr(locale, "관리자 설정", "Admin settings")} onClick={() => navigate("settings")}><Settings2 size={18} /></button>}</div></header>
     {view === "catalog" && <CatalogView owned={owned} revealedIds={revealedIds} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} setView={navigate} localAdminAccess={localAdminAccess} />}{view === "recognize" && <RecognizeView signedIn={Boolean(authUser)} onSignIn={signIn} addOwned={addOwned} revealedIds={revealedIds} globalBlur={globalBlur} />}{view === "collection" && <CollectionView owned={owned} revealedIds={revealedIds} photoAcquiredCount={photoAcquiredIds.length} drawnCount={drawnIds.length} ownerCounts={ownerCounts} toggleOwned={toggleOwned} globalBlur={globalBlur} user={authUser} onSignIn={signIn} onEditProfile={profileFeatureReady && profile ? () => setProfileEditorOpen(true) : undefined} />}{view === "settings" && localAdminAccess && <SettingsView globalBlur={globalBlur} setGlobalBlur={setGlobalBlur} />}
     <footer><Logo /><p>{tr(locale, "팬이 만들고, 팬이 함께 채우는 오픈 포토카드 아카이브.", "An open photocard archive made and completed by fans.")}</p><small>{tr(locale, "자료 출처: 리센느 음원총공팀 포카사전 · 이벤트 포카 Scene Simulation · Lip Bomb 앨범 포카 @bemyzena_ · Pulse 포카 MaxKim. 인식: XFeat (Apache-2.0). RESCENE 및 포토카드 권리는 각 권리자에게 있습니다.", "Sources: RESCENE streaming team's photocard catalog · Event photocards Scene Simulation · Lip Bomb album photocards @bemyzena_ · Pulse photocards MaxKim. Recognition: XFeat (Apache-2.0). RESCENE and photocard rights belong to their respective owners.")}</small></footer>{authUser && profileFeatureReady && (!profile || profileEditorOpen) && <ProfileSetup userId={authUser.id} currentProfile={profile} onComplete={completeProfile} onSignOut={signOut} onCancel={profile ? () => setProfileEditorOpen(false) : undefined} />}{toast && <div className="toast"><Check size={16} /> {toast}</div>}
-    {view === "draw" && <DailyDraw />}
+    {view === "draw" && supabase !== undefined && <DailyDraw />}
   </main></I18nProvider>;
 }

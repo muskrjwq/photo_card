@@ -1,25 +1,25 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { getPublicSupabaseConfig } from "@/lib/supabase-config";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const config = getPublicSupabaseConfig();
   const adminEmail = process.env.ADMIN_EMAIL;
   const authorization = request.headers.get("authorization");
   const token = authorization?.startsWith("Bearer ")
     ? authorization.slice("Bearer ".length)
     : null;
 
-  if (!url || !anonKey) {
+  if (!config) {
     return NextResponse.json({ error: "auth_not_configured" }, { status: 503 });
   }
   if (!token) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const supabase = createClient(url, anonKey, {
+  const supabase = createClient(config.url, config.key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { data, error } = await supabase.auth.getUser(token);
