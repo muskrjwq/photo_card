@@ -23,6 +23,7 @@ type CatalogSort = "release-asc" | "release-desc" | "owners-desc" | "owners-asc"
 const albumCollectionNames = collections.filter((collection) => catalogCards.some((card) => card.collection === collection && card.category === "album"));
 const eventCollectionNames = collections.filter((collection) => !albumCollectionNames.includes(collection));
 const catalogReleaseOrder = new Map(catalogCards.map((card, index) => [card.id, index]));
+const deckPositions = ["left", "center", "right"];
 const navItems = [
   { id: "draw" as View, ko: "포카 뽑기", en: "Daily Draw", icon: Plus },
   { id: "catalog" as View, ko: "포카도감", en: "Catalog", icon: BookOpen },
@@ -99,6 +100,29 @@ function Filters({ member, setMember, collection, setCollection, cards = catalog
   </div>;
 }
 
+function HeroDeck() {
+  const { t, memberLabel } = useI18n();
+  const [cards, setCards] = useState<CatalogCard[]>([]);
+
+  useEffect(() => {
+    const pool = catalogCards.filter((card) => !card.sensitive);
+    const count = Math.min(deckPositions.length, pool.length);
+    for (let index = 0; index < count; index += 1) {
+      const randomIndex = index + Math.floor(Math.random() * (pool.length - index));
+      [pool[index], pool[randomIndex]] = [pool[randomIndex], pool[index]];
+    }
+    setCards(pool.slice(0, count));
+  }, []);
+
+  return <div className="hero-deck" aria-label={t("포카 예시", "Photocard examples")}>
+    {cards.map((card, index) => <div key={card.id} className={`deck-card deck-${deckPositions[index]}`}>
+      <img src={card.image} alt={`${memberLabel(card.member)} ${card.name}`} />
+    </div>)}
+    <span className="spark spark-one">✦</span><span className="spark spark-two">✦</span>
+    <span className="deck-note">{t("현재", "Now")} <strong>{catalogCards.length}</strong>{t("장의 포카가", " photocards")}<br />{t("정리되어 있어요", "in the catalog")}</span>
+  </div>;
+}
+
 function CatalogView({ owned, revealedIds, ownerCounts, toggleOwned, globalBlur, setView, localAdminAccess }: { owned: string[]; revealedIds: string[]; ownerCounts: Record<string, number>; toggleOwned: (id: string) => void; globalBlur: boolean; setView: (v: View) => void; localAdminAccess: boolean }) {
   const { t } = useI18n();
   const [member, setMember] = useState("전체");
@@ -151,7 +175,7 @@ function CatalogView({ owned, revealedIds, ownerCounts, toggleOwned, globalBlur,
   };
   return <>
     <section className="hero"><div><span className="eyebrow"><span /> RESCENE PHOTOCARD ARCHIVE</span><h1><span>{t("리센느의 모든 순간을", "Every RESCENE moment")}</span><br /><em>{t("한 장씩, 차곡차곡.", "collected one card at a time.")}</em></h1><p>{t("앨범부터 이벤트 특전까지. 포카를 찾고, 기록하고,", "From albums to event benefits. Find and track your cards,")}<br className="desktop-only" /> {t("나만의 수집 앨범을 완성해 보세요.", "and complete your own collection.")}</p><div className="hero-actions"><button className="primary-button" onClick={() => setView("recognize")}><Camera size={18} /> {t("사진으로 포카 찾기", "Find from a photo")}</button><button className="text-button" onClick={() => document.getElementById("catalog-grid")?.scrollIntoView({ behavior: "smooth" })}>{t("도감 둘러보기", "Browse catalog")} <ArrowRight size={17} /></button></div></div>
-      <div className="hero-deck" aria-label={t("포카 예시", "Photocard examples")}><div className="deck-card deck-left"><CardArtwork card={catalogCards[2]} blurred={globalBlur && !revealedIds.includes(catalogCards[2].id)} /></div><div className="deck-card deck-center"><CardArtwork card={catalogCards[0]} blurred={globalBlur && !revealedIds.includes(catalogCards[0].id)} priority /></div><div className="deck-card deck-right"><CardArtwork card={catalogCards[4]} blurred={globalBlur && !revealedIds.includes(catalogCards[4].id)} /></div><span className="spark spark-one">✦</span><span className="spark spark-two">✦</span><span className="deck-note">{t("현재", "Now")} <strong>{catalogCards.length}</strong>{t("장의 포카가", " photocards")}<br />{t("정리되어 있어요", "in the catalog")}</span></div>
+      <HeroDeck />
     </section>
     <section className="catalog-section" id="catalog-grid"><div className="section-heading"><div><span className="section-kicker">PHOTOCARD LIST</span><h2>{t("포카도감", "Photocard Catalog")}</h2><p>{t("멤버와 앨범을 골라 원하는 포카를 찾아보세요.", "Choose a member and collection to find a photocard.")}</p></div><div className="catalog-heading-actions"><label className="catalog-search"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("포카명, 멤버, 출처 검색", "Search card, member or source")} /></label>{localAdminAccess && <button className="local-add-button" onClick={() => { preserveEditorState(); setEditorCard("new"); }}><FilePlus2 size={16} /> {t("새 포카 추가", "Add card")}</button>}</div></div>
       <Filters member={member} setMember={setMember} collection={collection} setCollection={setCollection} /><div className="result-bar"><span><strong>{filtered.length}</strong>{t("장의 포카", " photocards")}</span><div className="result-controls"><label className="column-slider"><LayoutGrid size={14} /><span>{t("한 줄", "Columns")} <strong>{columns}</strong>{t("장", "")}</span><input type="range" min="2" max="8" step="1" value={columns} aria-label={t(`한 줄에 ${columns}장 표시`, `${columns} columns`)} onChange={(event) => changeColumns(Number(event.target.value))} /></label><label className="sort-wrap"><Filter size={14} /><select value={sort} aria-label={t("포카 정렬 순서", "Card sort order")} onChange={(event) => setSort(event.target.value as CatalogSort)}><option value="release-asc">{t("발매 · 공개 순", "Oldest first")}</option><option value="release-desc">{t("최신순", "Newest first")}</option><option value="owners-desc">{t("소장 많은 순", "Most owned")}</option><option value="owners-asc">{t("소장 적은 순", "Least owned")}</option></select><ChevronDown size={13} /></label></div></div>
