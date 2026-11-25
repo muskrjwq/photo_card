@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import http from "node:http";
@@ -119,6 +119,18 @@ async function saveCard(payload) {
 
   const files = await loadCsvFiles();
   const entries = files.flatMap((file) => file.rows.map((row) => ({ file, row })));
+  let requestCardId;
+  if (payload.requestId != null) {
+    if (mode !== "create" || !/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(payload.requestId)) {
+      throw new Error("invalid_request_id");
+    }
+    requestCardId = createHash("sha256").update(`card-request:${payload.requestId}`).digest("hex").slice(0, 12);
+    const existing = entries.find((entry) => entry.row.cardId === requestCardId);
+    if (existing) {
+      await regenerateCatalog();
+      return { cardId: requestCardId, recognitionIndexPending: true };
+    }
+  }
   const target = mode === "edit" ? entries.find((entry) => entry.row.cardId === payload.cardId) : null;
   if (mode === "edit" && !target) throw new Error("card_not_found");
   const sameSeries = entries.find((entry) => entry.row.cardId !== payload.cardId && cardType(entry.row) === type && displayCollection(entry.row.category) === collection && normalized(entry.row.name) === normalized(name));
@@ -126,7 +138,7 @@ async function saveCard(payload) {
   const originalSeriesUnchanged = target && cardType(target.row) === type && displayCollection(target.row.category) === collection && normalized(target.row.name) === normalized(name);
   const idNumber = sameSeries?.row.idNumber ?? (originalSeriesUnchanged ? target.row.idNumber : String(maxSeriesId + 1));
   const rawCategory = originalSeriesUnchanged ? target.row.category : (sameSeries?.row.category ?? collection);
-  const cardId = target?.row.cardId ?? randomBytes(6).toString("hex");
+  const cardId = target?.row.cardId ?? requestCardId ?? randomBytes(6).toString("hex");
   if (!target && !payload.imageBase64) throw new Error("image_required");
 
   let localPath = target?.row.localPath ?? "";
@@ -145,8 +157,12 @@ async function saveCard(payload) {
   }
   if (!destination.headers.includes("catalogType")) destination.headers.push("catalogType");
   await writeFile(path.join(dataDirectory, destination.name), encodeCsv(destination.headers, destination.rows), "utf8");
-  await execFileAsync(process.execPath, [path.join(projectRoot, "scripts", "generate-rescene-catalog.mjs")], { cwd: projectRoot, maxBuffer: 1024 * 1024 * 10 });
+  await regenerateCatalog();
   return { cardId, idNumber: Number(idNumber), sameSeries: Boolean(sameSeries), recognitionIndexPending: Boolean(payload.imageBase64) };
+}
+
+function regenerateCatalog() {
+  return execFileAsync(process.execPath, [path.join(projectRoot, "scripts", "generate-rescene-catalog.mjs")], { cwd: projectRoot, maxBuffer: 1024 * 1024 * 10 });
 }
 
 async function deleteCard(cardId) {
@@ -187,6 +203,8 @@ function send(response, status, body, origin) {
   response.end(JSON.stringify(body));
 }
 
+let pendingWrite = Promise.resolve();
+
 http.createServer(async (request, response) => {
   const origin = request.headers.origin;
   if (!isAllowedOrigin(origin)) return send(response, 403, { error: "local_origin_required" }, origin);
@@ -200,7 +218,9 @@ http.createServer(async (request, response) => {
   try {
     if (!await verifyAdmin(request)) return send(response, 401, { error: "admin_required" }, origin);
     const payload = await readJson(request);
-    const result = payload.mode === "delete" ? await deleteCard(payload.cardId) : await saveCard(payload);
+    const write = pendingWrite.then(() => payload.mode === "delete" ? deleteCard(payload.cardId) : saveCard(payload));
+    pendingWrite = write.then(() => {}, () => {});
+    const result = await write;
     return send(response, 200, result, origin);
   } catch (error) {
     console.error("[local catalog]", error);

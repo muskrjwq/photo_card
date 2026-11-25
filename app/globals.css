@@ -324,6 +324,16 @@ a { color: inherit; text-decoration: none; }
 .batch-source-photo img { object-fit: cover; }
 .batch-item-copy { min-width: 0; display: grid; align-content: center; gap: 11px; }
 .batch-item-copy > p { margin: 0; color: #8b817b; font-size: 10px; line-height: 1.6; }
+.no-card-match { display: grid; justify-items: start; gap: 8px; }
+.no-card-match p { margin: 0; font-size: 14px; line-height: 1.5; }
+.no-card-match [role="status"] { font-size: 14px; color: #416653; }
+.request-queue { display: grid; gap: 8px; padding: 0; list-style: none; }
+.request-queue li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.request-queue small { display: block; margin-top: 4px; }
+.request-pagination { display: flex; gap: 8px; }
+.local-editor .local-editor-heading p { display: block; font-size: 14px; }
+.local-editor .local-editor-fields label > span, .local-editor .local-editor-fields input, .local-editor .local-editor-fields select { font-size: 14px; }
+.local-editor .local-editor-error { font-size: 14px; }
 .batch-status { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .batch-status > span { flex: 0 0 auto; padding: 4px 7px; color: #856f66; background: #f2ece9; border-radius: 20px; font-size: 8px; font-weight: 800; }
 .is-matched .batch-status > span { color: #3f7764; background: #e8f4ef; }

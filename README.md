@@ -41,6 +41,21 @@ ADMIN_EMAIL=YOUR_GOOGLE_ACCOUNT_EMAIL
 
 `npm run dev`는 웹 앱과 함께 `127.0.0.1:4317`의 로컬 편집 서비스를 실행합니다. 관리자 Google 계정으로 로그인하면 카드 상세 팝업에 `편집`, 명부 상단에 `새 포카 추가`가 나타납니다. 편집창에서는 포카를 삭제할 수도 있습니다. 저장·삭제 내용은 원본 CSV와 `public/rescene_poca` 이미지에 직접 반영되며 새 이미지는 WebP로 변환됩니다. 공개 production 빌드에서는 편집 UI와 로컬 쓰기 서비스가 제공되지 않습니다.
 
+### 포카 추가 요청
+
+1. Supabase SQL Editor에서 [포카 요청 마이그레이션](supabase/migrations/202611250001_card_requests.sql)을 1회 실행하세요.
+2. 기존 `ADMIN_EMAIL`과 동일한 Google 계정으로 한 번 로그인한 뒤, Supabase Authentication의 Users 목록에서 그 계정의 UUID를 복사하여 SQL Editor에서 등록하세요.
+
+   ```sql
+   insert into public.card_request_admins (user_id)
+   values ('여기에-관리자-UUID'::uuid)
+   on conflict do nothing;
+   ```
+
+인식 실패 결과에서 로그인한 사용자가 요청을 보낼 수 있습니다. 분석에 썼던 사진을 그대로 첨부하거나 교체할 수 있고, 제출할 때 브라우저에서 WebP로 변환합니다. 압축 사진과 입력 정보는 Supabase의 한 비공개 요청 행에 저장됩니다. 사용자당 대기 요청은 최대 5건이며, 관리자로 지정된 계정만 요청을 조회·삭제할 수 있습니다.
+
+로컬 서버에서 관리자 설정 → 포카 추가 요청으로 들어가면 정보를 고치고 사진을 교체하거나 그대로 등록할 수 있습니다. 로컬 등록 완료 또는 반려 시 요청과 임시 사진이 함께 삭제됩니다. 승인한 포카를 공개하려면 `npm run recognition:update`를 실행하고 변경된 도감 파일을 배포하세요.
+
 이미지를 추가하거나 교체한 뒤 커밋하기 전에는 다음 명령으로 인식 특징을 갱신하세요.
 
 ```bash
